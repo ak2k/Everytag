@@ -1,0 +1,22 @@
+:name: Everytag
+:description: Everytag BLE beacon on nRF52832
+
+using sysbus
+mach create
+machine LoadPlatformDescription @platforms/cpus/nrf52832.repl
+
+# Load firmware (path injected by test runner)
+$firmware ?= @build-52832/zephyr/zephyr.elf
+sysbus LoadELF $firmware
+
+# Set up virtual time
+emulation SetGlobalSerialExecution true
+
+# Create virtual BLE medium for packet capture
+emulation CreateBLEMedium "ble_medium"
+connector Connect sysbus.radio ble_medium
+
+# Log BLE packets
+ble_medium LogPackets true
+
+showAnalyzer sysbus.uart0

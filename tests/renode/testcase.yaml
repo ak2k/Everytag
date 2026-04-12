@@ -1,0 +1,7 @@
+tests:
+  renode.everytag:
+    tags: renode integration
+    platform_allow: nrf52dk/nrf52832
+    harness: robot
+    harness_config:
+      robot_test_path: test_everytag.robot
