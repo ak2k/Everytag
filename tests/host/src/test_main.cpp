@@ -12,6 +12,7 @@
 #include "accel_data.hpp"
 #include "beacon_config.hpp"
 #include "beacon_logic.hpp"
+#include "beacon_state.hpp"
 
 // Test infrastructure
 static int tests_run = 0;
@@ -742,6 +743,526 @@ TEST(load_corrupted_nvs) {
     nvs.store_int(beacon::ID_power_NVS, 999999);
     beacon::SettingsManager mgr(nvs);
     ASSERT_EQ(mgr.load(), 0);
+}
+
+// ============================================================================
+// Phase 4 Tests: beacon_state (StateMachine + IHardware)
+// ============================================================================
+
+// ---- MockHardware ----
+class MockHardware : public beacon::IHardware {
+  public:
+    // Configurable return values
+    uint32_t uptime = 0;
+    int battery_volt = 3800;
+    bool charging = false;
+    bool button = false;
+    int bt_enable_result = 0;
+
+    // Call counters
+    int bt_enable_calls = 0;
+    int bt_disable_calls = 0;
+    int adv_start_calls = 0;
+    int adv_stop_calls = 0;
+    int adv_update_airtag_calls = 0;
+    int adv_update_fmdn_calls = 0;
+    int set_mac_calls = 0;
+    int set_tx_power_calls = 0;
+    int wdt_feed_calls = 0;
+    int blink_led_calls = 0;
+    int power_off_calls = 0;
+    int reboot_calls = 0;
+    int sleep_ms_calls = 0;
+    int store_time_calls = 0;
+    int prepare_airtag_calls = 0;
+    int prepare_fmdn_calls = 0;
+    int start_settings_adv_calls = 0;
+    int stop_settings_adv_calls = 0;
+    int broadcast_ibeacon_calls = 0;
+    int accel_read_calls = 0;
+    int accel_init_calls = 0;
+    int accel_powerdown_calls = 0;
+    int bq_reinit_calls = 0;
+    int bq_shipmode_calls = 0;
+    int update_turned_on_calls = 0;
+
+    // Last values passed
+    int last_tx_power = -1;
+    uint8_t last_mac[6] = {};
+    bool last_turned_on = false;
+    int last_ibeacon_voltage = 0;
+
+    uint32_t uptime_seconds() override { return uptime; }
+    int bt_enable() override {
+        bt_enable_calls++;
+        return bt_enable_result;
+    }
+    void bt_disable() override { bt_disable_calls++; }
+    int adv_start(bool /*connectable*/, int /*imin*/, int /*imax*/) override {
+        adv_start_calls++;
+        return 0;
+    }
+    int adv_stop() override {
+        adv_stop_calls++;
+        return 0;
+    }
+    int adv_update_airtag() override {
+        adv_update_airtag_calls++;
+        return 0;
+    }
+    int adv_update_fmdn() override {
+        adv_update_fmdn_calls++;
+        return 0;
+    }
+    void set_mac(const uint8_t* addr) override {
+        set_mac_calls++;
+        memcpy(last_mac, addr, 6);
+    }
+    void set_tx_power(int level) override {
+        set_tx_power_calls++;
+        last_tx_power = level;
+    }
+    int battery_voltage() override { return battery_volt; }
+    bool is_charging() override { return charging; }
+    void wdt_feed() override { wdt_feed_calls++; }
+    void blink_led(int /*count*/, bool /*fast*/) override { blink_led_calls++; }
+    void power_off() override { power_off_calls++; }
+    void reboot() override { reboot_calls++; }
+    bool button_pressed() override { return button; }
+    void sleep_ms(uint32_t /*ms*/) override { sleep_ms_calls++; }
+    void store_time() override { store_time_calls++; }
+    void prepare_airtag(const uint8_t* /*key*/) override { prepare_airtag_calls++; }
+    void prepare_fmdn(const uint8_t* /*key*/) override { prepare_fmdn_calls++; }
+    void start_settings_adv() override { start_settings_adv_calls++; }
+    void stop_settings_adv() override { stop_settings_adv_calls++; }
+    void broadcast_ibeacon(int voltage) override {
+        broadcast_ibeacon_calls++;
+        last_ibeacon_voltage = voltage;
+    }
+    int accel_read() override {
+        accel_read_calls++;
+        return 0;
+    }
+    int accel_init() override {
+        accel_init_calls++;
+        return 0;
+    }
+    int accel_powerdown() override {
+        accel_powerdown_calls++;
+        return 0;
+    }
+    void bq_reinit(bool /*force*/) override { bq_reinit_calls++; }
+    void bq_shipmode() override { bq_shipmode_calls++; }
+    void update_turned_on(bool on) override {
+        update_turned_on_calls++;
+        last_turned_on = on;
+    }
+
+    void reset_counts() {
+        bt_enable_calls = 0;
+        bt_disable_calls = 0;
+        adv_start_calls = 0;
+        adv_stop_calls = 0;
+        adv_update_airtag_calls = 0;
+        adv_update_fmdn_calls = 0;
+        set_mac_calls = 0;
+        set_tx_power_calls = 0;
+        wdt_feed_calls = 0;
+        blink_led_calls = 0;
+        power_off_calls = 0;
+        reboot_calls = 0;
+        sleep_ms_calls = 0;
+        store_time_calls = 0;
+        prepare_airtag_calls = 0;
+        prepare_fmdn_calls = 0;
+        start_settings_adv_calls = 0;
+        stop_settings_adv_calls = 0;
+        broadcast_ibeacon_calls = 0;
+        accel_read_calls = 0;
+        accel_init_calls = 0;
+        accel_powerdown_calls = 0;
+        bq_reinit_calls = 0;
+        bq_shipmode_calls = 0;
+        update_turned_on_calls = 0;
+    }
+};
+
+// Helper: create a StateMachine with airtag keys loaded
+static void setup_with_airtag_keys(MockNvsStorage& nvs, MockHardware& hw,
+                                   beacon::SettingsManager& mgr, beacon::MovementTracker& accel,
+                                   beacon::StateMachine& sm, int num_keys = 3) {
+    (void)accel;
+    nvs.store_int(beacon::ID_airtag_NVS, 1);
+    nvs.store_int(beacon::ID_turnedOn_NVS, 1);
+    // Store keys
+    std::array<std::array<uint8_t, 28>, 40> keys = {};
+    for (int i = 0; i < num_keys; i++) {
+        keys[static_cast<size_t>(i)][0] = static_cast<uint8_t>(i + 1);
+        keys[static_cast<size_t>(i)][1] = static_cast<uint8_t>(0x10 + i);
+    }
+    nvs.write(beacon::ID_key_NVS, keys.data(), sizeof(keys));
+    mgr.load();
+    hw.uptime = 0;
+    sm.initialize();
+}
+
+TEST(init_to_broadcasting_airtag) {
+    printf("  test: init_to_broadcasting_airtag\n");
+    MockNvsStorage nvs;
+    MockHardware hw;
+    beacon::SettingsManager mgr(nvs);
+    beacon::MovementTracker accel;
+
+    nvs.store_int(beacon::ID_airtag_NVS, 1);
+    nvs.store_int(beacon::ID_turnedOn_NVS, 1);
+    // Load one key
+    std::array<std::array<uint8_t, 28>, 40> keys = {};
+    keys[0][0] = 0x42;
+    keys[0][1] = 0x11;
+    nvs.write(beacon::ID_key_NVS, keys.data(), sizeof(keys));
+    mgr.load();
+
+    beacon::StateMachine sm(hw, mgr, accel);
+    hw.uptime = 0;
+    sm.initialize();
+
+    ASSERT_EQ(sm.state(), beacon::State::Broadcasting);
+    ASSERT_TRUE(hw.bt_enable_calls > 0);
+    ASSERT_TRUE(hw.prepare_airtag_calls > 0);
+    ASSERT_TRUE(hw.set_mac_calls > 0);
+    ASSERT_EQ(sm.current_key(), 0);
+}
+
+TEST(init_to_ibeacon_mode) {
+    printf("  test: init_to_ibeacon_mode\n");
+    MockNvsStorage nvs;
+    MockHardware hw;
+    beacon::SettingsManager mgr(nvs);
+    beacon::MovementTracker accel;
+
+    // No flags set, but turned on
+    nvs.store_int(beacon::ID_turnedOn_NVS, 1);
+    mgr.load();
+
+    beacon::StateMachine sm(hw, mgr, accel);
+    hw.uptime = 0;
+    sm.initialize();
+
+    ASSERT_EQ(sm.state(), beacon::State::Broadcasting);
+    ASSERT_TRUE(hw.broadcast_ibeacon_calls > 0);
+    // Should NOT have prepared airtag
+    ASSERT_EQ(hw.prepare_airtag_calls, 0);
+}
+
+TEST(settings_mode_entry_exit) {
+    printf("  test: settings_mode_entry_exit\n");
+    MockNvsStorage nvs;
+    MockHardware hw;
+    beacon::SettingsManager mgr(nvs);
+    beacon::MovementTracker accel;
+    beacon::StateMachine sm(hw, mgr, accel);
+
+    nvs.store_int(beacon::ID_airtag_NVS, 1);
+    nvs.store_int(beacon::ID_turnedOn_NVS, 1);
+    std::array<std::array<uint8_t, 28>, 40> keys = {};
+    keys[0][0] = 0x42;
+    nvs.write(beacon::ID_key_NVS, keys.data(), sizeof(keys));
+    mgr.load();
+    hw.uptime = 0;
+    sm.initialize();
+    hw.reset_counts();
+
+    // Advance time to trigger settings mode entry (>= 60s)
+    hw.uptime = 61;
+    sm.tick();
+
+    ASSERT_EQ(sm.state(), beacon::State::SettingsMode);
+    ASSERT_TRUE(hw.bt_disable_calls > 0);
+    ASSERT_TRUE(hw.bt_enable_calls > 0);
+    ASSERT_TRUE(hw.start_settings_adv_calls > 0);
+    ASSERT_TRUE(sm.broadcasting_settings());
+
+    // Now advance past end_settings to exit
+    hw.reset_counts();
+    hw.uptime = 64; // end_settings = 61 + 2 = 63
+    sm.tick();
+
+    ASSERT_EQ(sm.state(), beacon::State::Broadcasting);
+    ASSERT_TRUE(hw.stop_settings_adv_calls > 0);
+    ASSERT_TRUE(hw.bt_disable_calls > 0);
+    ASSERT_TRUE(hw.bt_enable_calls > 0);
+    ASSERT_TRUE(!sm.broadcasting_settings());
+}
+
+// Helper: advance state machine through any settings mode that triggers
+// Returns the number of ticks executed
+static int advance_past_settings(MockHardware& hw, beacon::StateMachine& sm, uint32_t target_time) {
+    int ticks = 0;
+    hw.uptime = target_time;
+    sm.tick();
+    ticks++;
+    // If we entered settings mode, tick again to exit it
+    while (sm.state() == beacon::State::SettingsMode) {
+        hw.uptime = target_time + 3; // past SETTINGS_WAIT
+        sm.tick();
+        ticks++;
+        // One more tick at target time to process normal logic
+        hw.uptime = target_time + 4;
+        sm.tick();
+        ticks++;
+    }
+    return ticks;
+}
+
+TEST(key_rotation_increments_and_wraps) {
+    printf("  test: key_rotation_increments_and_wraps\n");
+    MockNvsStorage nvs;
+    MockHardware hw;
+    beacon::SettingsManager mgr(nvs);
+    beacon::MovementTracker accel;
+    beacon::StateMachine sm(hw, mgr, accel);
+
+    setup_with_airtag_keys(nvs, hw, mgr, accel, sm, 3);
+    ASSERT_EQ(sm.current_key(), 0);
+
+    // First tick: initial broadcast
+    hw.uptime = 1;
+    sm.tick();
+    ASSERT_TRUE(sm.broadcasting_airtag());
+
+    // Advance past changeInterval (default 6000s)
+    // This may trigger settings mode first, so advance through it
+    advance_past_settings(hw, sm, 6001);
+    ASSERT_EQ(sm.current_key(), 1);
+    ASSERT_EQ(sm.keys_changes(), 1);
+
+    advance_past_settings(hw, sm, 12002);
+    ASSERT_EQ(sm.current_key(), 2);
+    ASSERT_EQ(sm.keys_changes(), 2);
+
+    // Should wrap to 0
+    advance_past_settings(hw, sm, 18003);
+    ASSERT_EQ(sm.current_key(), 0);
+    ASSERT_EQ(sm.keys_changes(), 3);
+}
+
+TEST(airtag_fmdn_alternation) {
+    printf("  test: airtag_fmdn_alternation\n");
+    MockNvsStorage nvs;
+    MockHardware hw;
+    beacon::SettingsManager mgr(nvs);
+    beacon::MovementTracker accel;
+    beacon::StateMachine sm(hw, mgr, accel);
+
+    // Both flags enabled
+    nvs.store_int(beacon::ID_airtag_NVS, 1);
+    nvs.store_int(beacon::ID_fmdn_NVS, 1);
+    nvs.store_int(beacon::ID_turnedOn_NVS, 1);
+    std::array<std::array<uint8_t, 28>, 40> keys = {};
+    keys[0][0] = 0x42;
+    nvs.write(beacon::ID_key_NVS, keys.data(), sizeof(keys));
+    mgr.load();
+    hw.uptime = 0;
+    sm.initialize();
+
+    // First tick: should start with one protocol (initial broadcast)
+    hw.uptime = 1;
+    sm.tick();
+    bool first_airtag = sm.broadcasting_airtag();
+    bool first_fmdn = sm.broadcasting_fmdn();
+    // One should be true, other false
+    ASSERT_TRUE(first_airtag != first_fmdn);
+
+    // Second tick: should alternate
+    hw.uptime = 2;
+    sm.tick();
+    ASSERT_EQ(sm.broadcasting_airtag(), !first_airtag);
+    ASSERT_EQ(sm.broadcasting_fmdn(), !first_fmdn);
+
+    // Third tick: should alternate back
+    hw.uptime = 4;
+    sm.tick();
+    ASSERT_EQ(sm.broadcasting_airtag(), first_airtag);
+    ASSERT_EQ(sm.broadcasting_fmdn(), first_fmdn);
+}
+
+TEST(battery_uvlo_shutdown) {
+    printf("  test: battery_uvlo_shutdown\n");
+    MockNvsStorage nvs;
+    MockHardware hw;
+    beacon::SettingsManager mgr(nvs);
+    beacon::MovementTracker accel;
+    beacon::StateMachine sm(hw, mgr, accel);
+
+    nvs.store_int(beacon::ID_airtag_NVS, 1);
+    nvs.store_int(beacon::ID_turnedOn_NVS, 1);
+    std::array<std::array<uint8_t, 28>, 40> keys = {};
+    keys[0][0] = 0x42;
+    nvs.write(beacon::ID_key_NVS, keys.data(), sizeof(keys));
+    mgr.load();
+    hw.uptime = 0;
+    sm.initialize();
+
+    // Set low battery
+    hw.battery_volt = 2700;
+    hw.charging = false;
+
+    // Need 5+ consecutive low battery checks to trigger shutdown
+    // Battery check happens every 60s, but settings mode also triggers at 60s
+    // Use advance_past_settings to handle both
+    for (int i = 1; i <= 8; i++) {
+        if (sm.state() == beacon::State::ShuttingDown) {
+            break;
+        }
+        advance_past_settings(hw, sm, static_cast<uint32_t>(i * 60 + 1));
+    }
+
+    ASSERT_TRUE(sm.bad_power() > beacon::kUvloBadPowerThreshold);
+    ASSERT_EQ(sm.state(), beacon::State::ShuttingDown);
+    ASSERT_TRUE(hw.power_off_calls > 0);
+}
+
+TEST(battery_uvlo_charging_resets) {
+    printf("  test: battery_uvlo_charging_resets\n");
+    MockNvsStorage nvs;
+    MockHardware hw;
+    beacon::SettingsManager mgr(nvs);
+    beacon::MovementTracker accel;
+    beacon::StateMachine sm(hw, mgr, accel);
+
+    nvs.store_int(beacon::ID_airtag_NVS, 1);
+    nvs.store_int(beacon::ID_turnedOn_NVS, 1);
+    std::array<std::array<uint8_t, 28>, 40> keys = {};
+    keys[0][0] = 0x42;
+    nvs.write(beacon::ID_key_NVS, keys.data(), sizeof(keys));
+    mgr.load();
+    hw.uptime = 0;
+    sm.initialize();
+
+    // Low battery but charging
+    hw.battery_volt = 2700;
+    hw.charging = true;
+
+    // Run through multiple battery checks, advancing past settings mode
+    for (int i = 1; i <= 8; i++) {
+        advance_past_settings(hw, sm, static_cast<uint32_t>(i * 60 + 1));
+    }
+
+    // Should NOT shutdown because charging resets bad_power
+    ASSERT_NE(sm.state(), beacon::State::ShuttingDown);
+    ASSERT_EQ(sm.bad_power(), 0);
+    ASSERT_TRUE(sm.charge_lock_counter() > 0);
+}
+
+TEST(button_longpress_shutdown) {
+    printf("  test: button_longpress_shutdown\n");
+    MockNvsStorage nvs;
+    MockHardware hw;
+    beacon::SettingsManager mgr(nvs);
+    beacon::MovementTracker accel;
+    beacon::StateMachine sm(hw, mgr, accel);
+
+    nvs.store_int(beacon::ID_airtag_NVS, 1);
+    nvs.store_int(beacon::ID_turnedOn_NVS, 1);
+    std::array<std::array<uint8_t, 28>, 40> keys = {};
+    keys[0][0] = 0x42;
+    nvs.write(beacon::ID_key_NVS, keys.data(), sizeof(keys));
+    mgr.load();
+    hw.uptime = 0;
+    sm.initialize();
+
+    // First tick to get into broadcasting
+    hw.uptime = 1;
+    sm.tick();
+
+    // Now simulate button long-press
+    // The mock returns button=true, and handle_button_longpress checks twice
+    // with a sleep in between. We keep it pressed the whole time.
+    hw.button = true;
+
+    // We need to be clever: button_pressed() is called multiple times in
+    // handle_button_longpress. Since our mock always returns the same value,
+    // setting button=true will pass both checks and then loop until released.
+    // We'll set a counter to release after a few checks by modifying the
+    // approach: we'll just keep button=true but that means the while loop
+    // never exits. Instead, let's make it so the button releases after enough calls.
+
+    // Actually, our mock just returns `button` field. We need to make it
+    // eventually return false to exit the while loop. Let's use a simple approach:
+    // we can't easily do that with our simple mock, so let's make button=false
+    // to test that no shutdown happens, then use a subclass to test the full path.
+
+    // Let's use a lambda-based approach instead. We'll create a small subclass.
+    struct ButtonMock : MockHardware {
+        int press_count = 0;
+        int release_after = 4; // release after this many calls
+        bool button_pressed() override {
+            press_count++;
+            return press_count <= release_after;
+        }
+    };
+
+    ButtonMock bhw;
+    bhw.battery_volt = 3800;
+    bhw.uptime = 0;
+
+    MockNvsStorage nvs2;
+    nvs2.store_int(beacon::ID_airtag_NVS, 1);
+    nvs2.store_int(beacon::ID_turnedOn_NVS, 1);
+    std::array<std::array<uint8_t, 28>, 40> keys2 = {};
+    keys2[0][0] = 0x42;
+    nvs2.write(beacon::ID_key_NVS, keys2.data(), sizeof(keys2));
+    beacon::SettingsManager mgr2(nvs2);
+    mgr2.load();
+    beacon::MovementTracker accel2;
+    beacon::StateMachine sm2(bhw, mgr2, accel2);
+
+    // Button pressed at start -> turned_on set
+    bhw.release_after = 0; // not pressed at start
+    sm2.initialize();
+    ASSERT_EQ(sm2.state(), beacon::State::Broadcasting);
+
+    // First tick to get broadcasting started
+    bhw.uptime = 1;
+    bhw.press_count = 0;
+    bhw.release_after = 0; // not pressed during first tick
+    sm2.tick();
+
+    // Now tick with button pressed long enough
+    bhw.uptime = 2;
+    bhw.press_count = 0;
+    bhw.release_after = 4; // pressed for 4 calls then released
+    sm2.tick();
+
+    ASSERT_EQ(sm2.state(), beacon::State::ShuttingDown);
+    ASSERT_TRUE(bhw.power_off_calls > 0);
+    ASSERT_TRUE(bhw.update_turned_on_calls > 0);
+    ASSERT_EQ(bhw.last_turned_on, false);
+}
+
+TEST(nokeys_shutdown) {
+    printf("  test: nokeys_shutdown\n");
+    MockNvsStorage nvs;
+    MockHardware hw;
+    beacon::SettingsManager mgr(nvs);
+    beacon::MovementTracker accel;
+
+    // No flags, no keys, not charging, turned_on
+    nvs.store_int(beacon::ID_turnedOn_NVS, 1);
+    mgr.load();
+
+    beacon::StateMachine sm(hw, mgr, accel);
+    hw.uptime = 0;
+    sm.initialize();
+    ASSERT_EQ(sm.state(), beacon::State::Broadcasting);
+
+    // Advance past SHUTDOWN_NOKEYS (300s)
+    hw.uptime = 301;
+    hw.charging = false;
+    sm.tick();
+
+    ASSERT_EQ(sm.state(), beacon::State::ShuttingDown);
+    ASSERT_TRUE(hw.power_off_calls > 0);
 }
 
 int main() {

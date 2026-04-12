@@ -18,6 +18,7 @@ target_sources(app PRIVATE
     src/beacon_logic.cpp
     src/accel_data.cpp
     src/beacon_config.cpp
+    src/beacon_state.cpp
 )
 
 # Relax warnings on existing C code (pre-existing issues, will be replaced)

@@ -25,6 +25,7 @@ add_executable(host_tests
     ${SRC_DIR}/beacon_logic.cpp
     ${SRC_DIR}/accel_data.cpp
     ${SRC_DIR}/beacon_config.cpp
+    ${SRC_DIR}/beacon_state.cpp
 )
 
 target_compile_definitions(host_tests PRIVATE HOST_TEST=1)
