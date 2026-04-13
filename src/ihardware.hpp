@@ -73,7 +73,8 @@ class IHardware {
     /// Power down accelerometer (when accel_threshold == 0).
     virtual int accel_powerdown() = 0;
 
-    /// (Re)initialize BQ25121A charger IC. @param force true at startup, false for periodic refresh.
+    /// (Re)initialize BQ25121A charger IC. @param force true at startup, false for periodic
+    /// refresh.
     virtual void bq_reinit(bool force) = 0;
     /// Enter BQ25121A shipping mode (ultra-low-power, requires button press to wake).
     virtual void bq_shipmode() = 0;
