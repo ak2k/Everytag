@@ -1,0 +1,21 @@
+CompileFlags:
+  CompilationDatabase: build-810
+  Add:
+    - "-I../zephyr/include"
+    - "-I../zephyr/lib/libc/common/include"
+    - "-I../nrf/include"
+    - "-I../modules/hal/cmsis/CMSIS/Core/Include"
+    - "-Ibuild-810/zephyr/include/generated"
+    - "-Ibuild-810/zephyr/include/generated/zephyr"
+    - "-include"
+    - "build-810/zephyr/include/generated/zephyr/autoconf.h"
+    - "-DCONFIG_GPIO=1"
+    - "-DCONFIG_BT=1"
+  Remove:
+    # GCC flags unknown to clang
+    - "-fno-printf-return-value"
+    - "-mabi=aapcs"
+    - "-mfp16-format=ieee"
+    - "--param=min-pagesize=0"
+    - "-fno-reorder-functions"
+    - "-specs=nano.specs"

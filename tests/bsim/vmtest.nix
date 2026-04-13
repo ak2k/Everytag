@@ -1,4 +1,6 @@
-{ pkgs ? import <nixpkgs> { system = "x86_64-linux"; } }:
+{
+  pkgs ? import <nixpkgs> { system = "x86_64-linux"; },
+}:
 
 # NixOS VM test for BabbleSim BLE advertisement verification.
 # Runs an x86_64 VM that verifies beacon broadcasts + key rotation.
@@ -13,47 +15,58 @@
 # Will NOT work on aarch64 hosts (nested QEMU too slow, Kconfig 64BIT mismatch).
 
 let
-  pythonEnv = pkgs.python312.withPackages (ps: with ps; [
-    west pyelftools pyyaml pykwalify packaging
-  ]);
+  pythonEnv = pkgs.python312.withPackages (
+    ps: with ps; [
+      west
+      pyelftools
+      pyyaml
+      pykwalify
+      packaging
+    ]
+  );
 
   # Copy repo source into the Nix store (sandbox-safe)
   repoSrc = builtins.path {
     path = ../..;
     name = "everytag-src";
-    filter = path: type:
+    filter =
+      path: type:
       # Exclude build artifacts and .git
-      let baseName = builtins.baseNameOf path; in
-      baseName != ".git" &&
-      baseName != "build-810" &&
-      baseName != "build-test" &&
-      baseName != "build-k4p" &&
-      baseName != "build-wb" &&
-      baseName != "build-52832" &&
-      baseName != "result";
+      let
+        baseName = builtins.baseNameOf path;
+      in
+      baseName != ".git"
+      && baseName != "build-810"
+      && baseName != "build-test"
+      && baseName != "build-k4p"
+      && baseName != "build-wb"
+      && baseName != "build-52832"
+      && baseName != "result";
   };
 in
 pkgs.testers.nixosTest {
   name = "everytag-bsim-ble-test";
 
-  nodes.machine = { pkgs, lib, ... }: {
-    documentation.enable = false;
+  nodes.machine =
+    { pkgs, lib, ... }:
+    {
+      documentation.enable = false;
 
-    environment.systemPackages = [
-      pkgs.gcc
-      pkgs.gnumake
-      pkgs.cmake
-      pkgs.ninja
-      pkgs.dtc
-      pkgs.gperf
-      pkgs.git
-      pythonEnv
-    ];
+      environment.systemPackages = [
+        pkgs.gcc
+        pkgs.gnumake
+        pkgs.cmake
+        pkgs.ninja
+        pkgs.dtc
+        pkgs.gperf
+        pkgs.git
+        pythonEnv
+      ];
 
-    virtualisation.memorySize = 4096;
-    virtualisation.diskSize = 16384;
-    virtualisation.cores = 4;
-  };
+      virtualisation.memorySize = 4096;
+      virtualisation.diskSize = 16384;
+      virtualisation.cores = 4;
+    };
 
   testScript = ''
     machine.wait_for_unit("multi-user.target")

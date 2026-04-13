@@ -1,0 +1,125 @@
+name: CI
+
+on:
+  push:
+    branches: [cpp-migration, main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  host-tests:
+    name: Host tests (ASan/UBSan)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and run tests
+        run: |
+          cd tests/host
+          cmake -B build \
+            -DCMAKE_CXX_COMPILER=g++ \
+            -DCMAKE_C_COMPILER=gcc
+          cmake --build build
+          ./build/host_tests
+
+  clang-format:
+    name: clang-format check
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install clang-format
+        run: sudo apt-get update && sudo apt-get install -y clang-format
+
+      - name: Check formatting
+        run: clang-format --dry-run --Werror src/*.cpp src/*.hpp
+
+  cross-compile:
+    name: Cross-compile (${{ matrix.board }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        include:
+          - board: kkm_p1_nrf52810
+            nix: true
+          - board: nrf52dk/nrf52832
+            nix: false
+          - board: nrf52840dk/nrf52840
+            nix: false
+          - board: nrf52833dk/nrf52833
+            nix: false
+          - board: thingy52/nrf52832
+            nix: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nix
+        if: matrix.nix
+        uses: cachix/install-nix-action@v31
+
+      - name: Build firmware (pure Nix)
+        if: matrix.nix
+        run: |
+          nix build .#firmware -L
+          cat result/size.txt
+
+      - name: Build firmware (west)
+        if: "!matrix.nix"
+        uses: cachix/install-nix-action@v31
+
+      - name: Build firmware (west build)
+        if: "!matrix.nix"
+        run: |
+          nix develop --command bash -c '
+            west init -l .
+            cd .. && west update --narrow -o=--depth=1
+            cd $OLDPWD
+            west build --board ${{ matrix.board }} -d build-out --pristine --no-sysbuild
+            arm-none-eabi-size build-out/zephyr/zephyr.elf
+          '
+
+  codeql:
+    name: CodeQL analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: cpp
+          queries: security-and-quality
+
+      - name: Build for CodeQL
+        run: |
+          cd tests/host
+          cmake -B build \
+            -DCMAKE_CXX_COMPILER=g++ \
+            -DCMAKE_C_COMPILER=gcc
+          cmake --build build
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+
+  cppcheck:
+    name: cppcheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cppcheck
+        run: sudo apt-get update && sudo apt-get install -y cppcheck
+
+      - name: Run cppcheck
+        run: |
+          cppcheck --enable=warning,performance,portability \
+            --std=c++20 --error-exitcode=1 \
+            --suppress=missingIncludeSystem \
+            src/*.cpp src/*.hpp

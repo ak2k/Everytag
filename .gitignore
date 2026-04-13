@@ -6,3 +6,4 @@ __pycache__/
 twister-out*/
 tests/host/build/
 tests/*/build/
+result
