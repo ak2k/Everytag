@@ -434,7 +434,8 @@ extern "C" {
 
 void glue_sync_gatt_state(void* state_machine) {
     auto* sm = static_cast<beacon::StateMachine*>(state_machine);
-    if (!sm) return;
+    if (!sm)
+        return;
     sm->set_connected_gatt(connectedGatt != 0);
     sm->set_authorized_gatt(authorizedGatt != 0);
     sm->set_pause_upload(pauseUpload != 0);
@@ -443,7 +444,8 @@ void glue_sync_gatt_state(void* state_machine) {
 
 int beacon_glue_handle_auth(void* sm, const uint8_t* buf, uint16_t len) {
     auto* settings = static_cast<beacon::SettingsManager*>(sm);
-    if (!settings) return -1;
+    if (!settings)
+        return -1;
     const auto& cfg = settings->config();
 
     if (len != cfg.auth_code.size()) {
@@ -463,7 +465,8 @@ int beacon_glue_handle_auth(void* sm, const uint8_t* buf, uint16_t len) {
 
 int beacon_glue_handle_key(void* sm, const uint8_t* buf, uint16_t len) {
     auto* settings = static_cast<beacon::SettingsManager*>(sm);
-    if (!settings) return -1;
+    if (!settings)
+        return -1;
 
     // Called with NULL buf at disconnect to save keys
     if (buf == NULL) {
@@ -497,7 +500,8 @@ int beacon_glue_handle_key(void* sm, const uint8_t* buf, uint16_t len) {
 
 int beacon_glue_handle_period(void* sm, const uint8_t* buf, uint16_t len) {
     auto* settings = static_cast<beacon::SettingsManager*>(sm);
-    if (!settings) return -1;
+    if (!settings)
+        return -1;
     int32_t value = 0;
 
     static const int32_t allowed[] = {1, 2, 4, 8};
@@ -512,7 +516,8 @@ int beacon_glue_handle_period(void* sm, const uint8_t* buf, uint16_t len) {
 
 int beacon_glue_handle_fmdn(void* sm, const uint8_t* buf, uint16_t len) {
     auto* settings = static_cast<beacon::SettingsManager*>(sm);
-    if (!settings) return -1;
+    if (!settings)
+        return -1;
     if (len != sizeof(int32_t)) {
         return static_cast<int>(len);
     }
@@ -525,7 +530,8 @@ int beacon_glue_handle_fmdn(void* sm, const uint8_t* buf, uint16_t len) {
 
 int beacon_glue_handle_airtag(void* sm, const uint8_t* buf, uint16_t len) {
     auto* settings = static_cast<beacon::SettingsManager*>(sm);
-    if (!settings) return -1;
+    if (!settings)
+        return -1;
     if (len != sizeof(int32_t)) {
         return static_cast<int>(len);
     }
@@ -538,7 +544,8 @@ int beacon_glue_handle_airtag(void* sm, const uint8_t* buf, uint16_t len) {
 
 int beacon_glue_handle_change_interval(void* sm, const uint8_t* buf, uint16_t len) {
     auto* settings = static_cast<beacon::SettingsManager*>(sm);
-    if (!settings) return -1;
+    if (!settings)
+        return -1;
     int32_t value = 0;
     beacon::GattFieldSpec spec = {sizeof(int32_t), 30, 7200, nullptr, 0};
     auto result = beacon::validate_field(buf, len, true, spec, value);
@@ -551,7 +558,8 @@ int beacon_glue_handle_change_interval(void* sm, const uint8_t* buf, uint16_t le
 
 int beacon_glue_handle_tx_power(void* sm, const uint8_t* buf, uint16_t len) {
     auto* settings = static_cast<beacon::SettingsManager*>(sm);
-    if (!settings) return -1;
+    if (!settings)
+        return -1;
     int32_t value = 0;
     beacon::GattFieldSpec spec = {sizeof(int32_t), 0, 2, nullptr, 0};
     auto result = beacon::validate_field(buf, len, true, spec, value);
@@ -564,7 +572,8 @@ int beacon_glue_handle_tx_power(void* sm, const uint8_t* buf, uint16_t len) {
 
 int beacon_glue_handle_fmdn_key(void* sm, const uint8_t* buf, uint16_t len) {
     auto* settings = static_cast<beacon::SettingsManager*>(sm);
-    if (!settings) return -1;
+    if (!settings)
+        return -1;
     if (len != 20) {
         return -1;
     }
@@ -575,7 +584,8 @@ int beacon_glue_handle_fmdn_key(void* sm, const uint8_t* buf, uint16_t len) {
 
 int beacon_glue_handle_time_offset_write(void* sm, const uint8_t* buf, uint16_t len) {
     auto* settings = static_cast<beacon::SettingsManager*>(sm);
-    if (!settings) return -1;
+    if (!settings)
+        return -1;
     if (len != sizeof(int64_t)) {
         return -1;
     }
@@ -588,14 +598,16 @@ int beacon_glue_handle_time_offset_write(void* sm, const uint8_t* buf, uint16_t 
 
 int beacon_glue_handle_time_offset_read(void* sm, int64_t* out_time) {
     auto* settings = static_cast<beacon::SettingsManager*>(sm);
-    if (!settings || !out_time) return -1;
+    if (!settings || !out_time)
+        return -1;
     *out_time = settings->get_time(static_cast<uint32_t>(k_uptime_seconds()));
     return 0;
 }
 
 int beacon_glue_handle_settings_mac(void* sm, const uint8_t* buf, uint16_t len) {
     auto* settings = static_cast<beacon::SettingsManager*>(sm);
-    if (!settings) return -1;
+    if (!settings)
+        return -1;
     if (len != 6) {
         return -1;
     }
@@ -606,7 +618,8 @@ int beacon_glue_handle_settings_mac(void* sm, const uint8_t* buf, uint16_t len) 
 
 int beacon_glue_handle_status(void* sm, const uint8_t* buf, uint16_t len) {
     auto* settings = static_cast<beacon::SettingsManager*>(sm);
-    if (!settings) return -1;
+    if (!settings)
+        return -1;
     if (len != sizeof(int32_t)) {
         return -1;
     }
@@ -619,7 +632,8 @@ int beacon_glue_handle_status(void* sm, const uint8_t* buf, uint16_t len) {
 
 int beacon_glue_handle_accel(void* sm, const uint8_t* buf, uint16_t len) {
     auto* settings = static_cast<beacon::SettingsManager*>(sm);
-    if (!settings) return -1;
+    if (!settings)
+        return -1;
     int32_t value = 0;
     beacon::GattFieldSpec spec = {sizeof(int32_t), 0, 16383, nullptr, 0};
     auto result = beacon::validate_field(buf, len, true, spec, value);

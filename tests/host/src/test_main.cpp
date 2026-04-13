@@ -421,10 +421,10 @@ TEST(compute_status_equivalence) {
     };
     for (auto& tc : cases) {
         beacon::StatusInput in = {};
-        in.status_flags = tc.flags;
-        in.battery_voltage = tc.voltage;
-        in.keys_changes = tc.changes;
-        in.what_in_status = tc.what;
+        in.status_flags = static_cast<uint32_t>(tc.flags);
+        in.battery_voltage = static_cast<uint16_t>(tc.voltage);
+        in.keys_changes = static_cast<uint16_t>(tc.changes);
+        in.what_in_status = static_cast<uint8_t>(tc.what);
         in.accel_byte = tc.accel;
         in.temperature = tc.temp;
 
@@ -657,7 +657,7 @@ TEST(save_field_roundtrip) {
     MockNvsStorage nvs;
     beacon::SettingsManager mgr(nvs);
     mgr.load();
-    mgr.config_mut().mult_period = 8;
+    mgr.set_mult_period(8);
     ASSERT_TRUE(mgr.save_field(beacon::ID_period_NVS) > 0);
     beacon::SettingsManager mgr2(nvs);
     mgr2.load();
@@ -785,12 +785,15 @@ class MockHardware : public beacon::IHardware {
     int bq_reinit_calls = 0;
     int bq_shipmode_calls = 0;
     int update_turned_on_calls = 0;
+    int set_status_bytes_calls = 0;
 
     // Last values passed
     int last_tx_power = -1;
     uint8_t last_mac[6] = {};
     bool last_turned_on = false;
     int last_ibeacon_voltage = 0;
+    uint8_t last_airtag_status = 0;
+    uint8_t last_fmdn_status = 0;
 
     uint32_t uptime_seconds() override { return uptime; }
     int bt_enable() override {
@@ -857,6 +860,11 @@ class MockHardware : public beacon::IHardware {
         update_turned_on_calls++;
         last_turned_on = on;
     }
+    void set_status_bytes(uint8_t airtag_status, uint8_t fmdn_status) override {
+        last_airtag_status = airtag_status;
+        last_fmdn_status = fmdn_status;
+        set_status_bytes_calls++;
+    }
 
     void reset_counts() {
         bt_enable_calls = 0;
@@ -884,6 +892,7 @@ class MockHardware : public beacon::IHardware {
         bq_reinit_calls = 0;
         bq_shipmode_calls = 0;
         update_turned_on_calls = 0;
+        set_status_bytes_calls = 0;
     }
 };
 
@@ -1483,6 +1492,93 @@ TEST(fmdn_status_byte_preserved_across_key_switch) {
 
     // Status byte at position 23 should be preserved
     ASSERT_EQ(cpp_adv::fmdn_data_store[23], 0x55);
+}
+
+// ============================================================================
+// Phase 5 Tests: StatusFlags, validated setters, NVS validation, status bytes
+// ============================================================================
+
+TEST(status_flags_roundtrip) {
+    printf("  test: status_flags_roundtrip\n");
+    ASSERT_EQ(beacon::StatusFlags::unpack(0x458000).pack(), static_cast<uint32_t>(0x458000));
+    auto f = beacon::StatusFlags::unpack(0x458000);
+    ASSERT_EQ(f.airtag_base, 0);
+    ASSERT_EQ(f.fmdn_base, 0x80);
+    ASSERT_EQ(static_cast<uint8_t>(f.airtag_mode), 5);
+    ASSERT_EQ(static_cast<uint8_t>(f.fmdn_mode), 4);
+    // Zero packs to zero
+    ASSERT_EQ(beacon::StatusFlags::unpack(0).pack(), static_cast<uint32_t>(0));
+}
+
+TEST(setter_validation) {
+    printf("  test: setter_validation\n");
+    MockNvsStorage nvs;
+    beacon::SettingsManager settings(nvs);
+    settings.load();
+
+    // mult_period rejects invalid values
+    ASSERT_TRUE(!settings.set_mult_period(0));  // prevents busy-loop
+    ASSERT_TRUE(!settings.set_mult_period(3));
+    ASSERT_EQ(settings.config().mult_period, 2);  // unchanged
+    ASSERT_TRUE(settings.set_mult_period(4));
+    ASSERT_EQ(settings.config().mult_period, 4);
+
+    // tx_power rejects >2
+    ASSERT_TRUE(!settings.set_tx_power(5));
+    ASSERT_EQ(settings.config().tx_power, 2);
+
+    // change_interval aligns to 8
+    ASSERT_TRUE(settings.set_change_interval(6001));
+    ASSERT_EQ(settings.config().change_interval, 6000);  // aligned down
+    ASSERT_TRUE(!settings.set_change_interval(29));  // below min
+    ASSERT_TRUE(!settings.set_change_interval(7201));  // above max
+
+    // accel_threshold rejects >16383
+    ASSERT_TRUE(!settings.set_accel_threshold(16384));
+    ASSERT_EQ(settings.config().accel_threshold, 800);
+}
+
+TEST(nvs_load_rejects_invalid) {
+    printf("  test: nvs_load_rejects_invalid\n");
+    MockNvsStorage nvs;
+    nvs.store_int(beacon::ID_period_NVS, 0);   // invalid (busy-loop hazard)
+    nvs.store_int(beacon::ID_power_NVS, 99);   // out of range
+    nvs.store_int(beacon::ID_accel_NVS, -1);   // negative
+
+    beacon::SettingsManager settings(nvs);
+    settings.load();
+
+    // Should all fall back to defaults
+    ASSERT_EQ(settings.config().mult_period, 2);
+    ASSERT_EQ(settings.config().tx_power, 2);
+    ASSERT_EQ(settings.config().accel_threshold, 800);
+}
+
+TEST(status_bytes_wired) {
+    printf("  test: status_bytes_wired\n");
+    MockNvsStorage nvs;
+    beacon::SettingsManager settings(nvs);
+    settings.load();
+    settings.set_flag_airtag(true);
+    settings.set_status_flags(0x10042);  // mode 1, base 0x42
+
+    // Set up a key
+    uint8_t key[28] = {};
+    for (int i = 0; i < 28; i++) key[i] = static_cast<uint8_t>(i + 1);
+    settings.set_key_chunk(0, 0, key, 14);
+    settings.set_key_chunk(0, 14, key + 14, 14);
+    settings.set_num_keys(1);
+    settings.set_turned_on(true);
+
+    MockHardware hw;
+    hw.battery_volt = 3800;
+    beacon::MovementTracker accel;
+    beacon::StateMachine sm(hw, settings, accel);
+    sm.initialize();
+
+    // After initialize, set_status_bytes should have been called
+    ASSERT_TRUE(hw.set_status_bytes_calls > 0);
+    ASSERT_EQ(hw.last_airtag_status, 0x42);  // mode 1 = fixed base byte
 }
 
 int main() {
