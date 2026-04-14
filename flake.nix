@@ -185,6 +185,158 @@
 
         packages.default = self.packages.${system}.firmware;
 
+        # BabbleSim components (fetched from pinned revisions in bsim west.yml)
+        packages.bsim = pkgs.gccMultiStdenv.mkDerivation {
+          name = "babblesim";
+          # Fetch all bsim component repos at pinned revisions
+          srcs = [
+            (builtins.fetchGit { url = "https://github.com/BabbleSim/base"; rev = "a3dff9a57f334fb25daa9625841cd64cbfe56681"; allRefs = true; })
+            (builtins.fetchGit { url = "https://github.com/BabbleSim/ext_2G4_libPhyComv1"; rev = "aa4951317cc7d84f24152ea38ac9ac21e6d78a76"; allRefs = true; })
+            (builtins.fetchGit { url = "https://github.com/BabbleSim/ext_2G4_phy_v1"; rev = "04eeb3c3794444122fbeeb3715f4233b0b50cfbb"; allRefs = true; })
+            (builtins.fetchGit { url = "https://github.com/BabbleSim/ext_2G4_channel_NtNcable"; rev = "20a38c997f507b0aa53817aab3d73a462fff7af1"; allRefs = true; })
+            (builtins.fetchGit { url = "https://github.com/BabbleSim/ext_2G4_channel_multiatt"; rev = "bde72a57384dde7a4310bcf3843469401be93074"; allRefs = true; })
+            (builtins.fetchGit { url = "https://github.com/BabbleSim/ext_2G4_modem_magic"; rev = "edfcda2d3937a74be0a59d6cd47e0f50183453da"; allRefs = true; })
+            (builtins.fetchGit { url = "https://github.com/BabbleSim/ext_2G4_modem_BLE_simple"; rev = "4d2379de510684cd4b1c3bbbb09bce7b5a20bc1f"; allRefs = true; })
+            (builtins.fetchGit { url = "https://github.com/BabbleSim/ext_2G4_device_burst_interferer"; rev = "5b5339351d6e6a2368c686c734dc8b2fc65698fc"; allRefs = true; })
+            (builtins.fetchGit { url = "https://github.com/BabbleSim/ext_2G4_device_WLAN_actmod"; rev = "9cb6d8e72695f6b785e57443f0629a18069d6ce4"; allRefs = true; })
+            (builtins.fetchGit { url = "https://github.com/BabbleSim/ext_2G4_device_playback"; rev = "abb48cd71ddd4e2a9022f4bf49b2712524c483e8"; allRefs = true; })
+            (builtins.fetchGit { url = "https://github.com/BabbleSim/ext_2G4_device_playbackv2"; rev = "0a3c28ecd59b5ee08ed4668446c243d3ffd98b46"; allRefs = true; })
+            (builtins.fetchGit { url = "https://github.com/BabbleSim/ext_libCryptov1"; rev = "236309584c90be32ef12848077bd6de54e9f4deb"; allRefs = true; })
+          ];
+          sourceRoot = ".";
+          nativeBuildInputs = [ pkgs.gnumake ];
+
+          # Arrange sources into components/ layout:
+          #   components/         <- base repo (has Makefile with 'everything' target)
+          #   components/ext_*/   <- extension repos
+          unpackPhase = ''
+            srcs_arr=($srcs)
+            dirs=(
+              components
+              components/ext_2G4_libPhyComv1
+              components/ext_2G4_phy_v1
+              components/ext_2G4_channel_NtNcable
+              components/ext_2G4_channel_multiatt
+              components/ext_2G4_modem_magic
+              components/ext_2G4_modem_BLE_simple
+              components/ext_2G4_device_burst_interferer
+              components/ext_2G4_device_WLAN_actmod
+              components/ext_2G4_device_playback
+              components/ext_2G4_device_playbackv2
+              components/ext_libCryptov1
+            )
+            for i in "''${!srcs_arr[@]}"; do
+              mkdir -p "''${dirs[$i]}"
+              cp -r "''${srcs_arr[$i]}/." "''${dirs[$i]}"
+            done
+            chmod -R u+w .
+          '';
+
+          buildPhase = ''
+            export BSIM_OUT_PATH=$out
+            export BSIM_COMPONENTS_PATH=$PWD/components
+            # Symlink at top level matches bsim_west layout
+            ln -sf components/common/Makefile Makefile
+            make everything -j1
+          '';
+
+          installPhase = ''
+            test -f $out/bin/bs_2G4_phy_v1
+            # Merge source headers into output — the Makefile only installs
+            # binaries/libs to $out but downstream builds need headers from
+            # paths like $BSIM_COMPONENTS_PATH/libUtilv1/src/bs_tracing.h
+            chmod -R u+w $out/components
+            for d in components/*/src; do
+              target="$out/$d"
+              mkdir -p "$target"
+              cp -n "$d"/*.h "$target/" 2>/dev/null || true
+            done
+          '';
+        };
+
+        # BabbleSim BLE test derivation (Linux only)
+        # gccMultiStdenv provides gcc with --enable-multilib (32-bit libgcc in 32/ subdir)
+        packages.bsim-test = pkgs.gccMultiStdenv.mkDerivation {
+          name = "everytag-bsim-test";
+          src = ./.;
+          nativeBuildInputs = commonBuildInputs;
+          dontUseCmakeConfigure = true;
+          dontUseWestConfigure = true;
+          configurePhase = westConfigurePhase;
+
+          buildPhase = ''
+            export ZEPHYR_TOOLCHAIN_VARIANT=host
+            export ZEPHYR_BASE="$PWD/../zephyr"
+            export BSIM_COMPONENTS_PATH="${self.packages.${system}.bsim}/components"
+            export BSIM_OUT_PATH="${self.packages.${system}.bsim}"
+
+            BSIM=${self.packages.${system}.bsim}
+            RUNDIR=$PWD/run
+            mkdir -p $RUNDIR
+
+            # Set up run directory (phy uses ../lib/ relative paths)
+            mkdir -p $RUNDIR/bin $RUNDIR/lib
+            cp $BSIM/bin/* $RUNDIR/bin/
+            cp $BSIM/lib/* $RUNDIR/lib/ 2>/dev/null || true
+
+            # Build BLE adv test (nrf52_bsim)
+            cmake -GNinja -B build-bsim \
+              -DBOARD=nrf52_bsim \
+              -DZEPHYR_TOOLCHAIN_VARIANT=host \
+              -DBSIM_COMPONENTS_PATH="$BSIM_COMPONENTS_PATH" \
+              -DWEST_PYTHON=${pythonEnv}/bin/python3 \
+              -S tests/bsim
+            ninja -C build-bsim
+            cp build-bsim/zephyr/zephyr.exe $RUNDIR/bin/bs_nrf52_bsim_adv
+
+            # Build BLE adv test (nrf54l15bsim)
+            cmake -GNinja -B build-bsim-54l \
+              -DBOARD=nrf54l15bsim/nrf54l15/cpuapp \
+              -DZEPHYR_TOOLCHAIN_VARIANT=host \
+              -DBSIM_COMPONENTS_PATH="$BSIM_COMPONENTS_PATH" \
+              -DWEST_PYTHON=${pythonEnv}/bin/python3 \
+              -S tests/bsim
+            ninja -C build-bsim-54l
+            cp build-bsim-54l/zephyr/zephyr.exe $RUNDIR/bin/bs_nrf54l15bsim_adv
+
+            # Build SMP echo test (nrf52_bsim)
+            cmake -GNinja -B build-bsim-dfu \
+              -DBOARD=nrf52_bsim \
+              -DZEPHYR_TOOLCHAIN_VARIANT=host \
+              -DBSIM_COMPONENTS_PATH="$BSIM_COMPONENTS_PATH" \
+              -DWEST_PYTHON=${pythonEnv}/bin/python3 \
+              -S tests/bsim_dfu
+            ninja -C build-bsim-dfu
+            cp build-bsim-dfu/zephyr/zephyr.exe $RUNDIR/bin/bs_nrf52_bsim_smp
+
+            # Run all tests
+            cd $RUNDIR/bin
+
+            echo "=== BLE adv + MAC test (nrf52_bsim) ==="
+            ./bs_nrf52_bsim_adv -v=2 -s=adv52 -d=0 -rs=420 -testid=advertiser &
+            ./bs_nrf52_bsim_adv -v=2 -s=adv52 -d=1 -rs=69  -testid=scanner &
+            PID=$!; ./bs_2G4_phy_v1 -v=2 -s=adv52 -D=2 -sim_length=5000000; wait $PID
+
+            echo "=== BLE adv + MAC test (nrf54l15bsim) ==="
+            ./bs_nrf54l15bsim_adv -v=2 -s=adv54 -d=0 -rs=420 -testid=advertiser &
+            ./bs_nrf54l15bsim_adv -v=2 -s=adv54 -d=1 -rs=69  -testid=scanner &
+            PID=$!; ./bs_2G4_phy_v1 -v=2 -s=adv54 -D=2 -sim_length=5000000; wait $PID
+
+            echo "=== SMP echo test (nrf52_bsim) ==="
+            ./bs_nrf52_bsim_smp -v=2 -s=smp -d=0 -rs=420 -testid=smp_server &
+            ./bs_nrf52_bsim_smp -v=2 -s=smp -d=1 -rs=69  -testid=smp_client &
+            PID=$!; ./bs_2G4_phy_v1 -v=2 -s=smp -D=2 -sim_length=10000000; wait $PID
+          '';
+
+          installPhase = ''
+            mkdir -p $out
+            echo "All BabbleSim tests passed" > $out/result.txt
+            cp $RUNDIR/bin/bs_nrf52_bsim_adv $out/
+            cp $RUNDIR/bin/bs_nrf54l15bsim_adv $out/
+            cp $RUNDIR/bin/bs_nrf52_bsim_smp $out/
+          '';
+        };
+
         devShells.default = pkgs.mkShell {
           packages = [
             pkgs.cmake

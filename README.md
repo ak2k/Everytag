@@ -110,6 +110,8 @@ west flash -d build-dfu
 
 Settings stored in ZMS are preserved across OTA updates. Use full chip erase via SWD to reset them.
 
+DFU builds ship with MCUboot's default dev signing key. This means anyone can build and OTA their own firmware. To lock DFU to your own key, generate one with `imgtool keygen -k my-key.pem -t ecdsa-p256` and set `CONFIG_BOOT_SIGNATURE_KEY_FILE` in `sysbuild/mcuboot.conf`.
+
 ## Changing settings via BLE
 
 Every minute the beacon switches into settings mode for 2 seconds (configurable). Settings can be changed using `conn_beacon.py` (Python 3) or the Android app in `tagcheck/`.
