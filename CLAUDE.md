@@ -5,7 +5,7 @@ Run `nix develop` to enter the dev shell with all dependencies.
 Run `cd .. && west init -l Everytag && west update --narrow -o=--depth=1` to fetch Zephyr + NCS modules.
 
 ## Flake apps (no nix develop needed)
-nix build .#firmware  # pure cross-compile for nrf52810 (no west setup)
+nix build .#firmware  # cross-compile all boards in parallel (nrf52810 + nrf54l15)
 nix run .#test        # host-native tests (266 assertions, ASan/UBSan)
 nix run .#lint        # clang-format check (dry-run, fails on diff)
 nix run .#format      # auto-format C++ sources
