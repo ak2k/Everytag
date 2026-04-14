@@ -99,9 +99,12 @@ jobs:
             west init -l .
             cd .. && west update --narrow -o=--depth=1
             cd $OLDPWD
-            PYTHON=$(which python3)
+            # Ensure pykwalify is importable by any Python CMake finds
+            # (Nix has multiple Python interpreters; sysbuild sub-projects
+            # may resolve to the base one without site-packages)
+            export PYTHONPATH=$(python3 -c "import site; print('"'"':'"'"'.join(site.getsitepackages()))")
             west build --board ${{ matrix.board }} -d build-dfu --pristine \
-              -- -DEXTRA_CONF_FILE=dfu.conf -DWEST_PYTHON=$PYTHON
+              -- -DEXTRA_CONF_FILE=dfu.conf
             arm-none-eabi-size build-dfu/zephyr/zephyr.elf
           '
 
