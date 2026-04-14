@@ -151,9 +151,15 @@ The beacon uses its factory MAC address for iBeacon and settings broadcasts.
 
 See `tagcheck/` for an Android app that can scan for beacons, change settings, and upload firmware. It is an Android Studio project — you can build it yourself or use the included APK.
 
-## Credits
+## Credits and project history
 
-- [OpenHaystack](https://github.com/seemoo-lab/openhaystack)
-- [macless-haystack](https://github.com/dchristl/macless-haystack) (original firmware origin)
-- [FindMy scripts](https://github.com/biemster/FindMy) for querying Apple locations
-- [GoogleFindMyTools](https://github.com/leonboe1/GoogleFindMyTools) for FMDN key creation and location queries
+This firmware originated as a fork of the [macless-haystack](https://github.com/dchristl/macless-haystack) project, which itself builds on the [OpenHaystack](https://github.com/seemoo-lab/openhaystack) research project by the Secure Mobile Networking Lab at TU Darmstadt.
+
+The original C firmware was written by [vasimv](https://github.com/vasimv/Everytag), adding multi-key rotation, Google FMDN support, BLE settings reconfiguration, accelerometer tracking, OTA updates, and power optimization for nRF52 chips.
+
+This fork restructures the firmware as C++ with an `IHardware` abstraction and comprehensive off-target testing, while preserving byte-identical output.
+
+### Useful tools
+
+- [FindMy scripts](https://github.com/biemster/FindMy) — query Apple Find My locations
+- [GoogleFindMyTools](https://github.com/leonboe1/GoogleFindMyTools) — create FMDN keys and query Google Find My Device locations
