@@ -46,25 +46,29 @@ Button (first one on NRF52DK): long press until 1 short + 2 long flashes to star
 No west setup needed:
 
 ```
-nix build .#firmware          # cross-compile for all supported boards
-nix run .#test                # host-native tests (ASan/UBSan)
-nix run .#lint                # clang-format check
-nix run .#format              # auto-format C++ sources
+nix build .#firmware              # all board targets (no DFU)
+nix build .#firmware-nrf52810     # single board
+nix build .#firmware-nrf52832-dfu # with MCUboot + OTA support
+nix build .#firmware-nrf52833-dfu
+nix build .#firmware-nrf54l15-dfu
+nix run .#test                    # host-native tests (ASan/UBSan)
+nix run .#lint                    # clang-format check
+nix run .#format                  # auto-format C++ sources
 ```
+
+DFU targets build with sysbuild (MCUboot + application) and produce `app_update.bin` for OTA uploads. Boards that lack MCUboot partition layouts (nRF52805, nRF52810) simply don't have DFU targets.
 
 ### With west
 
 Requires nRF Connect SDK 2.8.0:
 
 ```
-# Custom boards (need BOARD_ROOT)
+# Small-flash boards (no DFU)
 west build --board kkm_p1_nrf52810 -d build-810 --pristine --no-sysbuild -- -DBOARD_ROOT=$(pwd)
 
-# Zephyr built-in boards
-west build --board nrf52dk/nrf52832 -d build-832 --pristine --no-sysbuild
-
-# nRF54L15
-west build --board nrf54l15dk/nrf54l15/cpuapp -d build-54l --pristine --no-sysbuild
+# DFU-capable boards (omit --no-sysbuild to enable MCUboot)
+west build --board nrf52dk/nrf52832 -d build-dfu --pristine -- -DEXTRA_CONF_FILE=dfu.conf
+west build --board nrf54l15dk/nrf54l15/cpuapp -d build-dfu --pristine -- -DEXTRA_CONF_FILE=dfu.conf
 ```
 
 ### Host-native tests
@@ -74,34 +78,6 @@ No Zephyr dependency needed:
 ```
 cd tests/host && cmake -B build && cmake --build build && ./build/host_tests
 ```
-
-### With DFU support (OTA-capable boards)
-
-For boards with >= 512KB flash, add `dfu.conf` to enable MCUmgr/MCUboot OTA:
-
-```
-# nRF52832 with DFU (sysbuild builds MCUboot automatically)
-west build --board nrf52dk/nrf52832 -d build-dfu --pristine -- -DEXTRA_CONF_FILE=dfu.conf
-
-# nRF52833 with DFU
-west build --board nrf52833dk/nrf52833 -d build-dfu --pristine -- -DEXTRA_CONF_FILE=dfu.conf
-
-# nRF54L15 with DFU (dual-core — sysbuild handles hci_rpmsg automatically)
-west build --board nrf54l15dk/nrf54l15/cpuapp -d build-dfu --pristine -- -DEXTRA_CONF_FILE=dfu.conf
-
-# Nix
-nix build .#firmware-nrf52832-dfu
-nix build .#firmware-nrf54l15-dfu
-```
-
-Note: omitting `--no-sysbuild` enables sysbuild, which picks up `sysbuild.conf` and builds MCUboot alongside the application.
-
-### Configuration files
-
-- `prj.conf` — debug build (RTT logging enabled)
-- `prj-lowpower.conf` — release build (logging disabled, lowest power consumption)
-- `dfu.conf` — MCUmgr/MCUboot overlay (used via `EXTRA_CONF_FILE`, not standalone)
-- `boards/nrf54l15dk_nrf54l15_cpuapp.conf` — nRF54L15 board-specific overrides (auto-merged by west)
 
 ## Flashing
 
@@ -115,17 +91,19 @@ After flashing via SWD or using the RTT debug console, disconnect power (remove 
 
 ## Firmware updates
 
-**SWD (all boards):** Flash via J-Link / debugger. This is the only update method for small-flash chips (nRF52805, nRF52810, nRF52811).
+**SWD (all boards):** Flash via J-Link / debugger.
 
-**OTA via mcumgr (boards with >= 512KB flash):** Build with `EXTRA_CONF_FILE=dfu.conf` (see "With DFU support" above). The initial flash must be done via SWD (`west flash -d build-dfu`). Subsequent updates use BLE:
+**OTA via BLE (DFU targets):** Build a `-dfu` target, flash initially via SWD, then update over the air:
 
 ```
-# conn_beacon.py authenticates and switches beacon to mcumgr mode (60s window)
-# flash_beacon.sh uploads the signed image via mcumgr CLI
+# Initial flash
+west flash -d build-dfu
+
+# OTA update (authenticates via BLE, uploads signed image via mcumgr)
 ./flash_beacon.sh <MAC_ADDR> <AUTH_KEY> build-dfu/zephyr/app_update.bin
 ```
 
-Supported OTA boards: nRF52832, nRF52833, nRF54L15. Settings stored in NVS/ZMS are preserved across OTA updates; use full chip erase via SWD to reset them.
+Settings stored in ZMS are preserved across OTA updates. Use full chip erase via SWD to reset them.
 
 ## Changing settings via BLE
 
