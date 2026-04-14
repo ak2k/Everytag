@@ -117,16 +117,6 @@ static uint8_t notify_cb(struct bt_conn *conn,
 
     LOG_INF("SMP response received (%u bytes)", length);
 
-    /* Log raw bytes for debugging */
-    const uint8_t *raw = data;
-    for (uint16_t i = 0; i < length && i < 32; i += 8) {
-        LOG_INF("  [%02u] %02x %02x %02x %02x %02x %02x %02x %02x", i,
-                raw[i], i+1 < length ? raw[i+1] : 0, i+2 < length ? raw[i+2] : 0,
-                i+3 < length ? raw[i+3] : 0, i+4 < length ? raw[i+4] : 0,
-                i+5 < length ? raw[i+5] : 0, i+6 < length ? raw[i+6] : 0,
-                i+7 < length ? raw[i+7] : 0);
-    }
-
     /* Response = 8-byte SMP header + CBOR payload */
     TEST_ASSERT(length >= 8, "Response too short: %u bytes", length);
 
