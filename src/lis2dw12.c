@@ -17,7 +17,7 @@
 #include <zephyr/pm/pm.h>
 #include <zephyr/pm/device.h>
 #include <zephyr/drivers/i2c.h>
-#include "settings.h"
+extern int accelThreshold; // defined in zephyr_hardware.cpp
 
 #define I2C0_NODE DT_NODELABEL(lis2dw12)
 static const struct i2c_dt_spec dev_acc_i2c = I2C_DT_SPEC_GET(I2C0_NODE);
