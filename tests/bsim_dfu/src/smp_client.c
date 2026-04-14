@@ -28,11 +28,11 @@ static struct bt_uuid_128 smp_chr_uuid = BT_UUID_INIT_128(
 
 /*
  * SMP echo request (hand-crafted):
- *   Header (8 bytes): op=2 (write), flags=0, len=8, group=1 (OS), seq=0, id=0 (echo)
+ *   Header (8 bytes): op=2 (write), flags=0, len=8, group=0 (OS), seq=0, id=0 (echo)
  *   CBOR payload (8 bytes): {"d":"test"} = a1 61 64 64 74 65 73 74
  */
 static const uint8_t smp_echo_req[] = {
-    0x02, 0x00, 0x00, 0x08, 0x00, 0x01, 0x00, 0x00,
+    0x02, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00,
     0xa1, 0x61, 0x64, 0x64, 0x74, 0x65, 0x73, 0x74,
 };
 
@@ -132,12 +132,10 @@ static uint8_t notify_cb(struct bt_conn *conn,
 
     const uint8_t *hdr = data;
     TEST_ASSERT(hdr[0] == 0x03, "Expected op=3 (write response), got %u", hdr[0]);
-    TEST_ASSERT(hdr[4] == 0x00 && hdr[5] == 0x01, "Expected group=1 (OS)");
+    TEST_ASSERT(hdr[4] == 0x00 && hdr[5] == 0x00, "Expected group=0 (OS)");
     TEST_ASSERT(hdr[7] == 0x00, "Expected id=0 (echo)");
 
-    /* Verify CBOR payload contains "test" somewhere (MCUmgr versions
-     * differ on the response key — "r" vs "d" — but the echoed
-     * string is always present) */
+    /* Verify CBOR payload contains the echoed "test" string */
     uint16_t payload_len = length - 8;
     const uint8_t *cbor = hdr + 8;
     const uint8_t test_str[] = {'t', 'e', 's', 't'};
@@ -150,7 +148,7 @@ static uint8_t notify_cb(struct bt_conn *conn,
     }
     TEST_ASSERT(found, "Echo response does not contain 'test' string");
 
-    LOG_INF("SMP echo response verified — MCUmgr BLE transport works!");
+    LOG_INF("SMP echo verified — MCUmgr BLE transport works!");
     SET_FLAG(echo_verified);
     return BT_GATT_ITER_CONTINUE;
 }
