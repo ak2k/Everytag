@@ -103,20 +103,27 @@
           };
       in
       {
-        # nix build .#firmware — debug build (logging, RTT)
-        packages.firmware = mkFirmware { name = "everytag-firmware"; };
+        # Individual board targets
+        packages.firmware-nrf52810 = mkFirmware { name = "everytag-firmware-nrf52810"; };
 
-        # nix build .#firmware-release — production build (no logging, minimal RAM)
+        packages.firmware-nrf54l15 = mkFirmware {
+          name = "everytag-firmware-nrf54l15";
+          board = "nrf54l15dk/nrf54l15/cpuapp";
+          boardRoot = false;
+        };
+
         packages.firmware-release = mkFirmware {
           name = "everytag-firmware-release";
           confFile = "prj-lowpower.conf";
         };
 
-        # nix build .#firmware-54l — nrf54l15dk build
-        packages.firmware-54l = mkFirmware {
-          name = "everytag-firmware-54l";
-          board = "nrf54l15dk/nrf54l15/cpuapp";
-          boardRoot = false;
+        # nix build .#firmware — builds all board targets
+        packages.firmware = pkgs.symlinkJoin {
+          name = "everytag-firmware-all";
+          paths = [
+            self.packages.${system}.firmware-nrf52810
+            self.packages.${system}.firmware-nrf54l15
+          ];
         };
 
         packages.default = self.packages.${system}.firmware;
