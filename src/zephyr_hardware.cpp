@@ -19,6 +19,9 @@
 #include <zephyr/pm/pm.h>
 #include <zephyr/sys/byteorder.h>
 #include <zephyr/sys/poweroff.h>
+#if defined(CONFIG_SOC_NRF54L15_CPUAPP)
+#include <hal/nrf_memconf.h>
+#endif
 #include <zephyr/sys/printk.h>
 #include <zephyr/sys/reboot.h>
 
@@ -292,6 +295,12 @@ void ZephyrHardware::power_off() {
     ::accel_powerdown();
 #endif
     k_sleep(K_MSEC(500));
+#if defined(CONFIG_SOC_NRF54L15_CPUAPP)
+    /* Disable RAM retention in system off to minimize current draw.
+     * See nrf/samples/bluetooth/peripheral_power_profiling/src/main.c */
+    nrf_memconf_ramblock_ret_mask_enable_set(NRF_MEMCONF, 0, BIT_MASK(8), false);
+    nrf_memconf_ramblock_ret2_mask_enable_set(NRF_MEMCONF, 0, BIT_MASK(8), false);
+#endif
     sys_poweroff();
 }
 
