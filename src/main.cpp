@@ -63,6 +63,12 @@ int main(void) {
         printk("Warning: settings load failed, using defaults\n");
     }
 
+    // Sync the C global used by lis2dw12.c (NVS may have loaded a different threshold)
+    {
+        extern int accelThreshold;
+        accelThreshold = static_cast<int>(settings.config().accel_threshold);
+    }
+
     // Set up GATT glue pointers
     glue_init(&settings, &sm);
 

@@ -38,7 +38,7 @@ void StateMachine::update_status() {
         break;
     }
     StatusInput in{};
-    in.status_flags = cfg.status_flags;
+    in.status = StatusFlags::unpack(cfg.status_flags);
     in.battery_voltage = last_battery_voltage_;
     in.keys_changes = keys_changes_;
     in.what_in_status = static_cast<uint8_t>(what_in_status_);

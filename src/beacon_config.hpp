@@ -53,13 +53,6 @@ struct StatusFlags {
     static StatusFlags unpack(uint32_t raw);
 };
 
-/// Telemetry cycle selector for status mode 5 (Telemetry).
-enum class WhatInStatus : uint8_t {
-    Voltage = 0,
-    Accel = 1,
-    Temperature = 2,
-};
-
 // ---- BeaconConfig (consolidates all globals from settings.c) ----
 //
 // All fields are persisted in NVS as 4-byte ints (wire format).
@@ -125,7 +118,7 @@ class SettingsManager {
     bool set_mult_period(uint8_t v);      // Allowed: {1, 2, 4, 8}
     bool set_tx_power(uint8_t v);         // Allowed: 0..2
     bool set_change_interval(uint16_t v); // Range: 30..7200, auto-aligned to multiple of 8
-    bool set_status_flags(uint32_t v);    // Any value accepted (app-level encoding)
+    void set_status_flags(uint32_t v);    // Any value accepted (app-level encoding)
     bool set_accel_threshold(uint16_t v); // Range: 0..16383
     void set_flag_fmdn(bool v);
     void set_flag_airtag(bool v);
