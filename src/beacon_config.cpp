@@ -178,12 +178,11 @@ bool SettingsManager::set_tx_power(uint8_t v) {
 }
 
 bool SettingsManager::set_change_interval(uint16_t v) {
-    if (v < 30 || v > 7200) {
+    uint16_t aligned = v - (v % 8); // Align down to multiple of 8
+    if (aligned < 32 || v > 7200) {
         return false;
     }
-    // Align down to multiple of 8, but not below minimum
-    uint16_t aligned = v - (v % 8);
-    config_.change_interval = (aligned >= 30) ? aligned : static_cast<uint16_t>(aligned + 8);
+    config_.change_interval = aligned;
     return true;
 }
 

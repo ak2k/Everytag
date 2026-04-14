@@ -34,8 +34,11 @@ bool is_key_empty(const uint8_t* key, size_t len) {
 // Compute status byte for one protocol (AirTag or FMDN).
 // base_status is the default byte from StatusFlags, mode selects the computation.
 // battery_shift is 6 for AirTag (bits 6..7), 5 for FMDN (bits 5..6).
+// voltage_only_for_mode3: true for AirTag (mode 3 = voltage only),
+//   false for FMDN (mode 3 cycles through telemetry, matching original C behavior).
 static uint8_t compute_one_status(uint8_t base_status, StatusMode mode, const StatusInput& in,
-                                  int battery_shift, int battery_default) {
+                                  int battery_shift, int battery_default,
+                                  bool voltage_only_for_mode3) {
     switch (mode) {
     case StatusMode::Fixed:
         return base_status;
@@ -45,7 +48,7 @@ static uint8_t compute_one_status(uint8_t base_status, StatusMode mode, const St
     case StatusMode::Telemetry:
         // Start with battery voltage
         base_status = static_cast<uint8_t>(in.battery_voltage / 100);
-        if (mode == StatusMode::Voltage || in.what_in_status == 0) {
+        if ((mode == StatusMode::Voltage && voltage_only_for_mode3) || in.what_in_status == 0) {
             return base_status;
         }
         if (in.what_in_status == 1) {
@@ -98,8 +101,12 @@ static uint8_t compute_one_status(uint8_t base_status, StatusMode mode, const St
 
 StatusOutput compute_status(const StatusInput& in) {
     StatusOutput out{};
-    out.airtag_status = compute_one_status(in.status.airtag_base, in.status.airtag_mode, in, 6, 3);
-    out.fmdn_status = compute_one_status(in.status.fmdn_base, in.status.fmdn_mode, in, 5, 0);
+    // AirTag: mode 3 (Voltage) returns voltage only.
+    // FMDN: mode 3 cycles through telemetry (matches original C behavior where
+    // the FMDN case 3/5 block had no early break for mode 3).
+    out.airtag_status =
+        compute_one_status(in.status.airtag_base, in.status.airtag_mode, in, 6, 3, true);
+    out.fmdn_status = compute_one_status(in.status.fmdn_base, in.status.fmdn_mode, in, 5, 0, false);
     return out;
 }
 
