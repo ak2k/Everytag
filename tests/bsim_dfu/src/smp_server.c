@@ -32,8 +32,7 @@ void entrypoint_smp_server(void)
 
     LOG_INF("SMP server advertising (MCUmgr SMP service auto-registered)");
 
-    /* Stay alive while client tests */
-    k_sleep(K_SECONDS(10));
-
+    /* Server's job is done — MCUmgr handles SMP requests autonomously.
+     * Mark as passed and let the sim run until the client finishes. */
     TEST_PASS("smp_server");
 }
