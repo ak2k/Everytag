@@ -75,10 +75,32 @@ No Zephyr dependency needed:
 cd tests/host && cmake -B build && cmake --build build && ./build/host_tests
 ```
 
+### With DFU support (OTA-capable boards)
+
+For boards with >= 512KB flash, add `dfu.conf` to enable MCUmgr/MCUboot OTA:
+
+```
+# nRF52832 with DFU (sysbuild builds MCUboot automatically)
+west build --board nrf52dk/nrf52832 -d build-dfu --pristine -- -DEXTRA_CONF_FILE=dfu.conf
+
+# nRF52833 with DFU
+west build --board nrf52833dk/nrf52833 -d build-dfu --pristine -- -DEXTRA_CONF_FILE=dfu.conf
+
+# nRF54L15 with DFU (dual-core — sysbuild handles hci_rpmsg automatically)
+west build --board nrf54l15dk/nrf54l15/cpuapp -d build-dfu --pristine -- -DEXTRA_CONF_FILE=dfu.conf
+
+# Nix
+nix build .#firmware-nrf52832-dfu
+nix build .#firmware-nrf54l15-dfu
+```
+
+Note: omitting `--no-sysbuild` enables sysbuild, which picks up `sysbuild.conf` and builds MCUboot alongside the application.
+
 ### Configuration files
 
-- `prj.conf` — debug build (RTT logging enabled, no MCUboot/DFU)
+- `prj.conf` — debug build (RTT logging enabled)
 - `prj-lowpower.conf` — release build (logging disabled, lowest power consumption)
+- `dfu.conf` — MCUmgr/MCUboot overlay (used via `EXTRA_CONF_FILE`, not standalone)
 - `boards/nrf54l15dk_nrf54l15_cpuapp.conf` — nRF54L15 board-specific overrides (auto-merged by west)
 
 ## Flashing
@@ -95,7 +117,15 @@ After flashing via SWD or using the RTT debug console, disconnect power (remove 
 
 **SWD (all boards):** Flash via J-Link / debugger. This is the only update method for small-flash chips (nRF52805, nRF52810, nRF52811).
 
-**OTA via mcumgr (not currently enabled):** The `sysbuild/` directory contains MCUboot configuration for future OTA support on chips with >= 512KB flash (nRF52832, nRF52833, nRF54L15). Enabling OTA requires setting `CONFIG_MCUMGR=y` and `CONFIG_BOOTLOADER_MCUBOOT=y` in the Kconfig, and building without `--no-sysbuild`. The `flash_beacon.sh` and `conn_beacon.py` scripts support the OTA workflow once enabled.
+**OTA via mcumgr (boards with >= 512KB flash):** Build with `EXTRA_CONF_FILE=dfu.conf` (see "With DFU support" above). The initial flash must be done via SWD (`west flash -d build-dfu`). Subsequent updates use BLE:
+
+```
+# conn_beacon.py authenticates and switches beacon to mcumgr mode (60s window)
+# flash_beacon.sh uploads the signed image via mcumgr CLI
+./flash_beacon.sh <MAC_ADDR> <AUTH_KEY> build-dfu/zephyr/app_update.bin
+```
+
+Supported OTA boards: nRF52832, nRF52833, nRF54L15. Settings stored in NVS/ZMS are preserved across OTA updates; use full chip erase via SWD to reset them.
 
 ## Changing settings via BLE
 
