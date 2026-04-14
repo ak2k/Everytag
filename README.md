@@ -118,6 +118,42 @@ All operations require password authentication (default: `abcdefgh`, changeable 
 
 Note: after loading an AirTag key, the MAC address in settings mode changes. It is recommended to set a specific settings MAC address (`-c` flag) when loading keys. Otherwise, you'll need to discover the new MAC via a BLE scanner (e.g., nRF Connect app).
 
+### conn_beacon.py reference
+
+| Flag | Description | Example |
+|------|-------------|---------|
+| `-i` | BLE MAC address (required) | `-i e7:93:3a:cc:f6:61` |
+| `-a` | Authentication code (required) | `-a abcdefgh` |
+| `-n` | Set new authentication code | `-n h45edc78` |
+| `-c` | Set new MAC for settings mode | `-c e7:93:3a:cc:f6:61` |
+| `-k` | Load AirTag keys from binary file | `-k ~/airtags/016WX1_keyfile` |
+| `-f` | Set Google FMDN key (hex) | `-f f1e101...` |
+| `-t` | Enable/disable AirTag broadcast | `-t 1` or `-t 0` |
+| `-g` | Enable/disable FMDN broadcast | `-g 1` or `-g 0` |
+| `-p` | TX power: 0 = -8 dBm, 1 = 0 dBm, 2 = +4/+8 dBm | `-p 2` |
+| `-d` | Broadcast interval multiplier: 1, 2, 4, or 8 seconds | `-d 2` |
+| `-l` | Key rotation interval in seconds (default 6000) | `-l 600` |
+| `-s` | Status byte config (hex, see below) | `-s 458000` |
+| `-m` | Accelerometer threshold in mg (0 = disable) | `-m 800` |
+| `-w` | Sync host clock to beacon | `-w 1` |
+| `-r` | Read beacon clock | `-r 1` |
+
+### Status byte encoding
+
+The `-s` flag configures what the AirTag/FMDN status bytes report. It's a packed 32-bit hex value:
+
+```
+bits  0..7  — base AirTag status byte (used in mode 1)
+bits  8..15 — base FMDN status byte (used in mode 1)
+bits 16..19 — AirTag mode:
+  0 = off         3 = battery voltage    5 = telemetry (cycle all)
+  1 = fixed byte  4 = battery level
+  2 = counter
+bits 20..23 — FMDN mode (same as AirTag mode)
+```
+
+Default `0x458000` = AirTag telemetry (cycles voltage/accel/temperature each minute), FMDN battery level, AirTag base `0x00`, FMDN base `0x80`.
+
 ### Examples
 
 Load keys and configure:
