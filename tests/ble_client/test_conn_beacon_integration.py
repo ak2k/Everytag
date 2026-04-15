@@ -227,5 +227,127 @@ def test_multiple_settings(beacon_and_mock):
     assert server.get_writes(UUID_TXPOWER) == [b"\x00\x00\x00\x00"]
 
 
+def test_new_auth_code(beacon_and_mock):
+    """conn_beacon.py -n newpass1 should write new auth code."""
+    server, mock_module, _ = beacon_and_mock
+
+    run_conn_beacon(
+        mock_module,
+        ["-i", "F0:F1:F2:F3:F4:F5", "-a", "abcdefgh", "-n", "newpass1"],
+    )
+
+    # First write is the auth, second is the new auth code
+    writes = server.get_writes(UUID_AUTH)
+    assert len(writes) == 2
+    assert writes[0] == b"abcdefgh"
+    assert writes[1] == b"newpass1"
+
+
+def test_new_settings_mac(beacon_and_mock):
+    """conn_beacon.py -c AA:BB:CC:DD:EE:FF should set settings MAC."""
+    server, mock_module, _ = beacon_and_mock
+
+    run_conn_beacon(
+        mock_module,
+        ["-i", "F0:F1:F2:F3:F4:F5", "-a", "abcdefgh", "-c", "AA:BB:CC:DD:EE:FF"],
+    )
+
+    # conn_beacon.py reverses the MAC bytes
+    expected = bytes.fromhex("AABBCCDDEEFF")[::-1]
+    assert server.get_writes(UUID_SETTINGS_MAC) == [expected]
+
+
+def test_write_time(beacon_and_mock):
+    """conn_beacon.py -w 1 should write current time."""
+    server, mock_module, _ = beacon_and_mock
+
+    run_conn_beacon(
+        mock_module,
+        ["-i", "F0:F1:F2:F3:F4:F5", "-a", "abcdefgh", "-w", "1"],
+    )
+
+    writes = server.get_writes(UUID_TIME)
+    assert len(writes) == 1
+    # Should be 8 bytes little-endian, value close to current time
+    assert len(writes[0]) == 8
+
+
+def test_read_time(beacon_and_mock):
+    """conn_beacon.py -r 1 should read time (no write to time char)."""
+    server, mock_module, _ = beacon_and_mock
+
+    run_conn_beacon(
+        mock_module,
+        ["-i", "F0:F1:F2:F3:F4:F5", "-a", "abcdefgh", "-r", "1"],
+    )
+
+    # Read-only — no writes to time characteristic
+    assert server.get_writes(UUID_TIME) == []
+
+
+def test_statusbyte(beacon_and_mock):
+    """conn_beacon.py -s 438000 should write status byte config."""
+    server, mock_module, _ = beacon_and_mock
+
+    run_conn_beacon(
+        mock_module,
+        ["-i", "F0:F1:F2:F3:F4:F5", "-a", "abcdefgh", "-s", "438000"],
+    )
+
+    expected = (0x438000).to_bytes(4, byteorder="little")
+    assert server.get_writes(UUID_STATUS) == [expected]
+
+
+def test_movethreshold(beacon_and_mock):
+    """conn_beacon.py -m 800 should write accelerometer threshold."""
+    server, mock_module, _ = beacon_and_mock
+
+    run_conn_beacon(
+        mock_module,
+        ["-i", "F0:F1:F2:F3:F4:F5", "-a", "abcdefgh", "-m", "800"],
+    )
+
+    expected = (800).to_bytes(4, byteorder="little")
+    assert server.get_writes(UUID_ACCEL) == [expected]
+
+
+def test_fmdn_key(beacon_and_mock):
+    """conn_beacon.py -f <hex> should write FMDN key."""
+    server, mock_module, _ = beacon_and_mock
+
+    key_hex = "0102030405060708090a0b0c0d0e0f1011121314"
+    run_conn_beacon(
+        mock_module,
+        ["-i", "F0:F1:F2:F3:F4:F5", "-a", "abcdefgh", "-f", key_hex],
+    )
+
+    assert server.get_writes(UUID_FMDN_KEY) == [bytes.fromhex(key_hex)]
+
+
+def test_keyfile(beacon_and_mock, tmp_path):
+    """conn_beacon.py -k <keyfile> should upload keys in 14-byte chunks."""
+    server, mock_module, _ = beacon_and_mock
+
+    # Create a test keyfile: 1 byte (num_keys=2) + 2 keys × 28 bytes
+    keyfile = tmp_path / "test.keys"
+    num_keys = 2
+    key_data = bytes([num_keys]) + bytes(range(56))  # 2 keys × 28 bytes
+    keyfile.write_bytes(key_data)
+
+    run_conn_beacon(
+        mock_module,
+        ["-i", "F0:F1:F2:F3:F4:F5", "-a", "abcdefgh", "-k", str(keyfile)],
+    )
+
+    # 2 keys × 2 chunks = 4 data writes + 2 zero-terminator writes = 6
+    writes = server.get_writes(UUID_KEYS)
+    assert len(writes) == 6
+    for w in writes:
+        assert len(w) == 14
+    # Last two are zero terminators
+    assert writes[-1] == b"\x00" * 14
+    assert writes[-2] == b"\x00" * 14
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
