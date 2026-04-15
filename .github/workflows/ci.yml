@@ -23,6 +23,18 @@ jobs:
           cmake --build build
           ./build/host_tests
 
+  ble-client-tests:
+    name: BLE client tests (Bumble)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Run Bumble BLE client tests
+        run: uv run --with bumble --with pytest --with pytest-asyncio pytest tests/ble_client/ -v
+
   clang-format:
     name: clang-format check
     runs-on: ubuntu-latest
