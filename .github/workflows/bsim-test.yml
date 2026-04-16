@@ -25,4 +25,12 @@ jobs:
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
 
       - name: Build and run BabbleSim tests
-        run: nix build .#bsim-test
+        run: nix build .#bsim-test -L
+
+      - name: Show test output (useful when result was pulled from cache)
+        if: always()
+        run: |
+          DRV=$(nix path-info --derivation .#bsim-test)
+          echo "::group::BabbleSim test log"
+          nix log "$DRV" | tail -100
+          echo "::endgroup::"
