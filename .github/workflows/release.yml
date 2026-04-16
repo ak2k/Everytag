@@ -20,9 +20,13 @@ jobs:
           name: ak2k
           authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}"
 
-      - name: Build all release + DFU firmware
+      - name: Build all release + dev + DFU firmware
         run: |
           for pkg in \
+            firmware-nrf52810 \
+            firmware-nrf52832 \
+            firmware-nrf52833 \
+            firmware-nrf54l15 \
             firmware-nrf52810-release \
             firmware-nrf52832-release \
             firmware-nrf52833-release \
@@ -39,11 +43,18 @@ jobs:
           mkdir -p release
           TAG=${GITHUB_REF_NAME}
 
-          # Release (no DFU) firmware
+          # Release (no DFU) firmware — production, no logging
           for board in nrf52810 nrf52832 nrf52833 nrf54l15; do
             dir="result-firmware-${board}-release"
             cp "$dir/zephyr.hex" "release/everytag-${board}-${TAG}.hex"
             cp "$dir/size.txt" "release/everytag-${board}-${TAG}-size.txt"
+          done
+
+          # Dev firmware — logging + RTT console for debugging
+          for board in nrf52810 nrf52832 nrf52833 nrf54l15; do
+            dir="result-firmware-${board}"
+            cp "$dir/zephyr.hex" "release/everytag-${board}-dev-${TAG}.hex"
+            cp "$dir/size.txt" "release/everytag-${board}-dev-${TAG}-size.txt"
           done
 
           # DFU firmware (MCUboot + app)
@@ -68,26 +79,29 @@ jobs:
           declare -A FLASH_KB=( [nrf52810]=192 [nrf52832]=512 [nrf52833]=512 [nrf54l15]=1524 )
 
           cat > release/RELEASE_NOTES.md <<'HEADER'
-          ### Flash usage (release builds)
+          ### Flash usage
 
-          | SoC | Used | Available | Usage |
-          |-----|-----:|----------:|------:|
+          | SoC | Release | Dev | Available | Release usage |
+          |-----|--------:|----:|----------:|--------------:|
           HEADER
           sed -i 's/^          //' release/RELEASE_NOTES.md
 
           for board in nrf52810 nrf52832 nrf52833 nrf54l15; do
-            read -r text data bss dec hex file < <(tail -1 "release/everytag-${board}-${TAG}-size.txt")
-            used_kb=$(( (text + data + 512) / 1024 ))
+            read -r text data _ < <(tail -1 "release/everytag-${board}-${TAG}-size.txt")
+            rel_kb=$(( (text + data + 512) / 1024 ))
+            read -r text data _ < <(tail -1 "release/everytag-${board}-dev-${TAG}-size.txt")
+            dev_kb=$(( (text + data + 512) / 1024 ))
             avail_kb=${FLASH_KB[$board]}
-            pct=$(( used_kb * 100 / avail_kb ))
-            echo "| ${board} | ${used_kb} KB | ${avail_kb} KB | ${pct}% |" >> release/RELEASE_NOTES.md
+            pct=$(( rel_kb * 100 / avail_kb ))
+            echo "| ${board} | ${rel_kb} KB | ${dev_kb} KB | ${avail_kb} KB | ${pct}% |" >> release/RELEASE_NOTES.md
           done
 
           cat >> release/RELEASE_NOTES.md <<'NOTES'
 
           ### Files
 
-          - `*-<board>-<tag>.hex` — Release firmware (flash via SWD)
+          - `*-<board>-<tag>.hex` — **Release** firmware (production, no logging). Flash via SWD.
+          - `*-<board>-dev-<tag>.hex` — **Dev** firmware (logging + RTT console). Use for debugging/bring-up via J-Link.
           - `*-<board>-dfu-<tag>.merged.hex` — MCUboot + app (initial SWD flash for DFU-capable boards)
           - `*-<board>-dfu-<tag>.signed.hex` — Signed app image (for OTA updates)
 
