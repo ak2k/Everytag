@@ -6,11 +6,48 @@ on:
       - "v*"
 
 jobs:
+  # Gate the release on the full test suite before spending time on 22
+  # firmware builds. Two parallel gate jobs:
+  # - check: nix flake check — host tests (ASan/UBSan), lint, cppcheck,
+  #   Bumble BLE client tests
+  # - bsim: BabbleSim BLE adv + key rotation tests (nrf52 + nrf54l15),
+  #   MCUmgr SMP echo, ZMS persistence on native_sim
+  check:
+    name: Test gate (nix flake check)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup-nix
+        with:
+          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - name: nix flake check
+        run: nix flake check -L
+
+  bsim:
+    name: Test gate (BabbleSim BLE + DFU + ZMS)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup-nix
+        with:
+          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - name: nix build .#bsim-test
+        run: nix build .#bsim-test -L
+
   # One job per firmware variant, in parallel.
   # Each gets its own live log panel in the Actions UI sidebar; failures
   # attribute to the specific variant and can be retried independently.
   build:
     name: Build ${{ matrix.label }}
+    needs: [check, bsim]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -85,17 +122,38 @@ jobs:
     name: Create GitHub Release
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
+    permissions:
+      actions: write
+      contents: write # to create the release
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+
+      - uses: ./.github/actions/setup-nix
+        with:
+          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
       - uses: actions/download-artifact@v8
         with:
           path: release
           pattern: firmware-*
           merge-multiple: true
+
+      - name: Generate SBOMs (SPDX + CycloneDX)
+        run: |
+          TAG=${GITHUB_REF_NAME}
+          # Build the canonical "everything" firmware drv and generate SBOMs
+          # for its runtime closure (covers all firmware variants' common base).
+          nix build .#firmware -o result-sbom -L
+          mkdir -p sbom
+          nix shell nixpkgs#sbomnix -c sbomnix result-sbom \
+            --type=runtime \
+            --cdx=sbom/everytag-${TAG}.cdx.json \
+            --spdx=sbom/everytag-${TAG}.spdx.json \
+            --csv=sbom/everytag-${TAG}.csv
+          ls -la sbom/
 
       - name: Generate release notes
         run: |
@@ -162,6 +220,7 @@ jobs:
             echo "- \`*-<board>-dev-<tag>.hex\` — **Dev** firmware (logging + RTT console). Use for debugging/bring-up via J-Link."
             echo "- \`*-<board>-dfu-<tag>.merged.hex\` — MCUboot + app (initial SWD flash for DFU-capable boards)"
             echo "- \`*-<board>-dfu-<tag>.signed.hex\` — Signed app image (for OTA updates)"
+            echo "- \`everytag-<tag>.cdx.json\` / \`.spdx.json\` / \`.csv\` — Software Bill of Materials"
 
             if [ -n "$PREV_TAG" ]; then
               echo
@@ -186,4 +245,7 @@ jobs:
             --notes-file release/RELEASE_NOTES.md \
             release/everytag-*.hex \
             release/everytag-*.elf \
-            release/everytag-*-size.txt
+            release/everytag-*-size.txt \
+            sbom/everytag-*.cdx.json \
+            sbom/everytag-*.spdx.json \
+            sbom/everytag-*.csv

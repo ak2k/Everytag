@@ -1,0 +1,55 @@
+name: Update lockfiles
+
+on:
+  schedule:
+    # Weekly, Monday 06:00 UTC
+    - cron: "0 6 * * 1"
+  workflow_dispatch: # allow manual trigger
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write # cache-nix-action
+
+jobs:
+  update:
+    name: Refresh flake.lock + west2nix.toml
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ./.github/actions/setup-nix
+        with:
+          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      - name: Update flake inputs
+        run: nix flake update
+
+      - name: Refresh west2nix.toml (auto-inits west workspace)
+        run: nix run .#update-lockfile
+
+      - name: Run test gate
+        run: nix flake check -L
+
+      - name: Smoke-build one firmware target
+        run: nix build .#firmware-nrf52810 -L
+
+      - name: Open PR if anything changed
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: auto/update-lockfiles
+          commit-message: "auto: refresh flake.lock + west2nix.toml"
+          title: "auto: refresh flake.lock + west2nix.toml"
+          body: |
+            Weekly automated refresh.
+
+            - `nix flake update` bumps flake inputs (nixpkgs, west2nix, git-hooks)
+            - `nix run .#update-lockfile` regenerates `west2nix.toml` from the
+              current west workspace
+            - `nix flake check` + `nix build .#firmware-nrf52810` ran green
+              before this PR was opened
+
+            Review the diff, confirm release matrix still builds, merge.
+          labels: automated, dependencies
+          delete-branch: true
