@@ -1,0 +1,140 @@
+name: NCS upgrade check
+
+on:
+  schedule:
+    - cron: "0 8 * * 1" # Mondays 08:00 UTC (after lockfile refresh at 06:00)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+jobs:
+  check-and-upgrade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Check for newer NCS release in same major
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          CURRENT=$(awk '/name: sdk-nrf/{f=1} f && /revision:/{print $2; exit}' west.yml)
+          CURRENT_MAJOR=$(echo "$CURRENT" | sed -E 's/^v([0-9]+)\..*/\1/')
+          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
+          echo "Current NCS: $CURRENT (major v${CURRENT_MAJOR})"
+
+          # Latest non-prerelease tag matching current major version.
+          # Major bumps (v2.x → v3.x) are explicitly OUT of scope here —
+          # those always need manual migration work. Tracked in TODO.md.
+          LATEST=$(gh release list -R nrfconnect/sdk-nrf \
+            --exclude-drafts --exclude-pre-releases \
+            -L 30 --json tagName \
+            --jq "[.[] | .tagName | select(startswith(\"v${CURRENT_MAJOR}.\"))] | .[0] // \"\"")
+
+          if [ -z "$LATEST" ]; then
+            echo "No v${CURRENT_MAJOR}.x release found on NCS repo"
+            echo "up-to-date=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Latest v${CURRENT_MAJOR}.x: $LATEST"
+          echo "latest=$LATEST" >> "$GITHUB_OUTPUT"
+
+          if [ "$CURRENT" = "$LATEST" ]; then
+            echo "Already on latest v${CURRENT_MAJOR}.x"
+            echo "up-to-date=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Upgrade available: $CURRENT → $LATEST"
+            echo "up-to-date=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: ./.github/actions/setup-nix
+        if: steps.check.outputs.up-to-date == 'false'
+        with:
+          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          cache-scope: build
+
+      - name: Bump west.yml + regenerate west2nix.toml
+        if: steps.check.outputs.up-to-date == 'false'
+        run: |
+          sed -i "s|revision: ${{ steps.check.outputs.current }}|revision: ${{ steps.check.outputs.latest }}|" west.yml
+          nix run .#update-lockfile
+          echo "=== west.yml diff ==="
+          git diff west.yml
+          echo "=== west2nix.toml stat ==="
+          git diff --stat west2nix.toml
+
+      # Validate the bump against the full test + build matrix. Any failure
+      # means the upgrade needs manual migration — we still open a PR, just
+      # labelled differently so the human knows to expect work.
+      - name: Full validation (nix flake check + all firmware + bsim)
+        id: validate
+        if: steps.check.outputs.up-to-date == 'false'
+        continue-on-error: true
+        run: |
+          set -e
+          nix flake check -L
+          nix build -L \
+            .#firmware-nrf52810 \
+            .#firmware-nrf52832 \
+            .#firmware-nrf52833 \
+            .#firmware-nrf52840 \
+            .#firmware-nrf54l15 \
+            .#firmware-thingy52 \
+            .#firmware-nrf52832-dfu \
+            .#firmware-nrf52833-dfu \
+            .#firmware-nrf52840-dfu \
+            .#firmware-nrf54l15-dfu \
+            .#firmware-thingy52-dfu \
+            .#bsim-test
+
+      - name: Open PR — validation passed
+        if: steps.check.outputs.up-to-date == 'false' && steps.validate.outcome == 'success'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: auto/ncs-${{ steps.check.outputs.latest }}
+          commit-message: "auto: upgrade NCS ${{ steps.check.outputs.current }} → ${{ steps.check.outputs.latest }}"
+          title: "auto: upgrade NCS ${{ steps.check.outputs.current }} → ${{ steps.check.outputs.latest }}"
+          body: |
+            Automatic NCS patch/minor upgrade within the same major version.
+
+            - **From:** `${{ steps.check.outputs.current }}`
+            - **To:** `${{ steps.check.outputs.latest }}`
+
+            ### Validated
+            - `nix flake check` — host tests, lint, cppcheck, BLE client tests
+            - Full 11-variant firmware matrix (nrf52810/32/33/40, nrf54l15, thingy52 with DFU variants)
+            - BabbleSim (BLE adv + MCUmgr SMP + ZMS persistence)
+
+            All green. Review the release-notes flash usage diff post-merge to spot any size regression.
+
+            Release notes: https://github.com/nrfconnect/sdk-nrf/releases/tag/${{ steps.check.outputs.latest }}
+          labels: automated, ncs-upgrade
+          delete-branch: true
+
+      - name: Open PR — needs manual migration
+        if: steps.check.outputs.up-to-date == 'false' && steps.validate.outcome == 'failure'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: auto/ncs-${{ steps.check.outputs.latest }}
+          commit-message: "wip: NCS ${{ steps.check.outputs.current }} → ${{ steps.check.outputs.latest }} (needs migration)"
+          title: "wip: NCS ${{ steps.check.outputs.current }} → ${{ steps.check.outputs.latest }} — needs migration"
+          body: |
+            Attempted NCS upgrade **failed validation**. This PR captures the
+            lockfile bump for diagnostic convenience; **do not merge as-is**.
+
+            - **From:** `${{ steps.check.outputs.current }}`
+            - **To:** `${{ steps.check.outputs.latest }}`
+
+            CI run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            Typical fixes: Kconfig deprecations, Zephyr API changes, MCUboot
+            partition tweaks. See release notes:
+            https://github.com/nrfconnect/sdk-nrf/releases/tag/${{ steps.check.outputs.latest }}
+          labels: automated, ncs-upgrade, needs-migration
+          draft: true
+          delete-branch: true
