@@ -580,12 +580,13 @@
                 pkgs.clang
               ];
               text = ''
-                cd "''${1:-.}/tests/host"
-                cmake -B build \
+                # Out-of-source build so this works both from a live checkout
+                # and from a read-only /nix/store path (checks.default).
+                src="''${1:-.}"
+                cmake -S "$src/tests/host" -B build \
                   -DCMAKE_CXX_COMPILER=clang++ \
-                  -DCMAKE_C_COMPILER=clang \
-                  2>/dev/null
-                cmake --build build 2>&1
+                  -DCMAKE_C_COMPILER=clang
+                cmake --build build
                 ./build/host_tests
               '';
             };
