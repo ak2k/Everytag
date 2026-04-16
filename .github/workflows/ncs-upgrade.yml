@@ -8,7 +8,6 @@ on:
 permissions:
   contents: write
   pull-requests: write
-  issues: write # open tracking issues for major-version availability
   actions: write
 
 jobs:
@@ -178,47 +177,36 @@ jobs:
           echo "target_major=$TARGET_MAJOR" >> "$GITHUB_OUTPUT"
           echo "Newer major available: $LATEST_MAJOR (we're on major v${CURRENT_MAJOR})"
 
-      - name: Open or update tracking issue for major bump
+      # Workflow annotation + step-summary entry. Visible in the Actions tab
+      # without needing Issues enabled on the repo. Runs every week so the
+      # signal is recurring but low-noise (one line per run).
+      - name: Advisory — newer major available
         if: steps.major.outputs.available == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TITLE="NCS major upgrade available: v${{ steps.major.outputs.target_major }}.x (currently ${{ steps.check.outputs.current }})"
+          LATEST="${{ steps.major.outputs.latest }}"
+          TARGET_MAJOR="${{ steps.major.outputs.target_major }}"
+          CURRENT="${{ steps.check.outputs.current }}"
 
-          # Dedup per target major — one issue per major we're advising about
-          EXISTING=$(gh issue list -R ${{ github.repository }} \
-            --label ncs-major-bump --state open \
-            --search "v${{ steps.major.outputs.target_major }} in:title" \
-            --json number --jq '.[0].number // empty')
+          # ::warning:: shows up as a yellow banner on the run summary and
+          # gets rolled up in the repo's Actions overview.
+          echo "::warning title=NCS major upgrade available::$LATEST is available (currently $CURRENT). Major bumps require manual migration — see TODO.md and $LATEST release notes."
 
-          BODY=$(cat <<EOF
-          Nordic has published **${{ steps.major.outputs.latest }}** (major v${{ steps.major.outputs.target_major }}.x).
-          We're currently on **${{ steps.check.outputs.current }}**.
-
-          This is a **major version bump** and requires manual migration:
-          - Kconfig deprecations and renames
-          - Zephyr API churn (functions removed, signatures changed)
-          - MCUboot partition layout changes — deployed fleet OTA may be
-            incompatible without SWD recovery
-          - Possible bsim_west manifest changes (our bsim-west2nix.toml regenerates automatically)
-
-          See the NCS migration guide and release notes:
-          - https://docs.nordicsemi.com/bundle/ncs-latest/page/nrf/releases_and_maturity/migration/migration_guide_${{ steps.major.outputs.target_major }}.0.html
-          - https://github.com/nrfconnect/sdk-nrf/releases/tag/${{ steps.major.outputs.latest }}
-
-          Existing TODO item: see \`TODO.md\` → "Upgrade to nRF Connect SDK v3.x"
-
-          This issue will stay open until we bump \`west.yml\` to v${{ steps.major.outputs.target_major }}.x.
-          EOF
-          )
-
-          if [ -n "$EXISTING" ]; then
-            echo "Tracking issue #$EXISTING already exists for v${{ steps.major.outputs.target_major }}.x — refreshing body"
-            gh issue edit "$EXISTING" -R ${{ github.repository }} --body "$BODY"
-          else
-            echo "Opening new tracking issue for v${{ steps.major.outputs.target_major }}.x"
-            gh issue create -R ${{ github.repository }} \
-              --title "$TITLE" \
-              --body "$BODY" \
-              --label automated,ncs-major-bump
-          fi
+          # Job summary (rendered as Markdown on the run's Summary tab)
+          {
+            echo "## NCS major upgrade available"
+            echo
+            echo "Nordic has published **$LATEST** (major v${TARGET_MAJOR}.x)."
+            echo "We're currently on **$CURRENT**."
+            echo
+            echo "This is a **major version bump** and requires manual migration:"
+            echo "- Kconfig deprecations and renames"
+            echo "- Zephyr API churn (functions removed, signatures changed)"
+            echo "- MCUboot partition layout changes — deployed fleet OTA may be"
+            echo "  incompatible without SWD recovery"
+            echo "- Possible bsim_west manifest changes (our bsim-west2nix.toml regenerates automatically)"
+            echo
+            echo "### Resources"
+            echo "- [NCS migration guide](https://docs.nordicsemi.com/bundle/ncs-latest/page/nrf/releases_and_maturity/migration/migration_guide_${TARGET_MAJOR}.0.html)"
+            echo "- [Release notes](https://github.com/nrfconnect/sdk-nrf/releases/tag/${LATEST})"
+            echo "- See \`TODO.md\` → \"Upgrade to nRF Connect SDK v3.x\""
+          } >> "$GITHUB_STEP_SUMMARY"
