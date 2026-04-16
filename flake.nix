@@ -64,6 +64,16 @@
           mv everytag $sourceRoot/
           cd $sourceRoot
           runHook postConfigure
+          # zephyr_module.py (invoked by sysbuild/MCUboot) reads the manifest
+          # project's git metadata via `git rev-parse HEAD`. The west2nix hook
+          # only fakes git repos for imported projects, not the manifest dir
+          # itself. Without this, DFU builds fail at zephyr_module.py:589 with
+          # `TypeError: unsupported operand type(s) for +=: 'NoneType' and 'str'`.
+          ${pkgs.gitMinimal}/bin/git -C everytag init -q
+          ${pkgs.gitMinimal}/bin/git -C everytag config user.email 'nix@build'
+          ${pkgs.gitMinimal}/bin/git -C everytag config user.name 'Nix Build'
+          ${pkgs.gitMinimal}/bin/git -C everytag add -A
+          ${pkgs.gitMinimal}/bin/git -C everytag commit -q -m 'Nix build snapshot'
           west init -l everytag
           cd everytag
         '';
@@ -90,6 +100,7 @@
               export ZEPHYR_BASE="$PWD/../zephyr"
 
               cmake -GNinja -B build \
+                -DCMAKE_BUILD_TYPE=MinSizeRel \
                 -DBOARD=${board} \
                 ${if boardRoot then "-DBOARD_ROOT=$PWD" else ""} \
                 -DCONF_FILE=${confFile} \
@@ -130,6 +141,7 @@
 
               west build --board ${board} -d build --pristine \
                 -- \
+                -DCMAKE_BUILD_TYPE=MinSizeRel \
                 ${if boardRoot then "-DBOARD_ROOT=$PWD" else ""} \
                 -DCONF_FILE=${confFile} \
                 -DEXTRA_CONF_FILE=dfu.conf

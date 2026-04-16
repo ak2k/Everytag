@@ -5,10 +5,11 @@ Run `nix develop` to enter the dev shell with all dependencies.
 Run `cd .. && west init -l Everytag && west update --narrow -o=--depth=1` to fetch Zephyr + NCS modules.
 
 ## Flake apps (no nix develop needed)
-nix build .#firmware  # cross-compile all boards in parallel (nrf52810 + nrf54l15)
-nix run .#test        # host-native tests (290 assertions, ASan/UBSan)
-nix run .#lint        # clang-format check (dry-run, fails on diff)
-nix run .#format      # auto-format C++ sources
+nix build .#firmware    # cross-compile all boards in parallel (nrf52810 + nrf54l15)
+nix build .#bsim-test  # BabbleSim BLE + ZMS persistence tests (Linux, Cachix-cached)
+nix run .#test          # host-native tests (290 assertions, ASan/UBSan)
+nix run .#lint          # clang-format check (dry-run, fails on diff)
+nix run .#format        # auto-format C++ sources
 
 ## Cross-compile check (verify firmware compiles for real boards)
 west build --board kkm_p1_nrf52810 -d build-810 --pristine --no-sysbuild -- -DBOARD_ROOT=$(pwd)
@@ -27,23 +28,26 @@ nix build .#firmware-nrf52833-dfu
 nix build .#firmware-nrf54l15-dfu
 # west: west build --board nrf52dk/nrf52832 -d build-dfu --pristine -- -DEXTRA_CONF_FILE=dfu.conf
 
-## BabbleSim tests
-# tests/bsim/   — BLE advertisement test: verifies AirTag key rotation
-#   and MAC derivation produce correct payloads over simulated radio.
-# tests/bsim_dfu/ — MCUmgr SMP echo test: verifies the DFU BLE transport
-#   works end-to-end. Covers:
-#   1. SMP GATT service registers and is discoverable by UUID
-#   2. BLE central can connect, discover, subscribe to notifications
-#   3. SMP echo request round-trips through the BLE transport
-#   4. Response has valid SMP header (op=3, group=OS, id=echo)
-#   5. Echoed payload contains the original test string
-#   Does NOT test: MCUboot image swap, actual firmware upload, flash
-#   partitions (nrf52_bsim lacks them). Those require real hardware.
+## BabbleSim tests (nix build .#bsim-test)
+# tests/bsim/        — BLE adv + MAC verification (nrf52_bsim + nrf54l15bsim)
+# tests/bsim_dfu/    — MCUmgr SMP echo test (nrf52_bsim)
+# tests/zms_persist/ — ZMS write/remount/read persistence (native_sim, 25 assertions)
+# All three run in a single Nix derivation via gccMultiStdenv.
+# BabbleSim components are pinned fetchGit derivations, cached via Cachix (ak2k store).
+# west2nix uses PR#2 (wrvsrx/west2nix#reduce-repeating-clone) for fast builds.
+
+## Bumble BLE client tests
+# tests/ble_client/test_conn_beacon.py — GATT unit tests (8 tests: auth enforcement,
+#   key upload, time read/write, all settings)
+# tests/ble_client/test_conn_beacon_integration.py — runs actual conn_beacon.py against
+#   Bumble virtual BLE (12 tests: all 15 CLI options covered)
+# Run: uv run --with bumble --with pytest --with pytest-asyncio pytest tests/ble_client/ -v
 
 ## Binary size (nrf52810)
 # C baseline: text=151968, data=2872, bss=19930
 # C++ migration: text=152340 (+372 bytes, +0.2%)
 # C++ overhaul:  text=152920 (+952 bytes, +0.6%)
+# Current (+ ZMS, MAC logging, nrf54l15 guards): text=154544 (+2576, +1.7%)
 
 ## Supported boards
 # Custom boards (in boards/arm/, need -DBOARD_ROOT=$(pwd)):
