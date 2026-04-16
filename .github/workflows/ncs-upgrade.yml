@@ -8,6 +8,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  issues: write # open tracking issues for major-version availability
   actions: write
 
 jobs:
@@ -146,3 +147,78 @@ jobs:
           labels: automated, ncs-upgrade, needs-migration
           draft: true
           delete-branch: true
+
+      # Advisory: if a NEWER MAJOR version exists, open a tracking issue (deduped
+      # per major). Doesn't try to upgrade — major bumps require manual migration.
+      - name: Check for newer major version
+        id: major
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          CURRENT=${{ steps.check.outputs.current }}
+          CURRENT_MAJOR=$(echo "$CURRENT" | sed -E 's/^v([0-9]+)\..*/\1/')
+
+          # Highest plain vX.Y.Z tag where X > current major
+          LATEST_MAJOR=$(gh release list -R nrfconnect/sdk-nrf \
+            --exclude-drafts --exclude-pre-releases \
+            -L 100 --json tagName \
+            --jq ".[] | .tagName | select(test(\"^v[0-9]+\\\\.[0-9]+\\\\.[0-9]+$\"))" \
+            | awk -F. -v cur="$CURRENT_MAJOR" '{gsub(/^v/,"",$1); if ($1 > cur) print "v"$1"."$2"."$3}' \
+            | sort -V | tail -1)
+
+          if [ -z "$LATEST_MAJOR" ]; then
+            echo "No newer major version available"
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          TARGET_MAJOR=$(echo "$LATEST_MAJOR" | sed -E 's/^v([0-9]+)\..*/\1/')
+          echo "available=true" >> "$GITHUB_OUTPUT"
+          echo "latest=$LATEST_MAJOR" >> "$GITHUB_OUTPUT"
+          echo "target_major=$TARGET_MAJOR" >> "$GITHUB_OUTPUT"
+          echo "Newer major available: $LATEST_MAJOR (we're on major v${CURRENT_MAJOR})"
+
+      - name: Open or update tracking issue for major bump
+        if: steps.major.outputs.available == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TITLE="NCS major upgrade available: v${{ steps.major.outputs.target_major }}.x (currently ${{ steps.check.outputs.current }})"
+
+          # Dedup per target major — one issue per major we're advising about
+          EXISTING=$(gh issue list -R ${{ github.repository }} \
+            --label ncs-major-bump --state open \
+            --search "v${{ steps.major.outputs.target_major }} in:title" \
+            --json number --jq '.[0].number // empty')
+
+          BODY=$(cat <<EOF
+          Nordic has published **${{ steps.major.outputs.latest }}** (major v${{ steps.major.outputs.target_major }}.x).
+          We're currently on **${{ steps.check.outputs.current }}**.
+
+          This is a **major version bump** and requires manual migration:
+          - Kconfig deprecations and renames
+          - Zephyr API churn (functions removed, signatures changed)
+          - MCUboot partition layout changes — deployed fleet OTA may be
+            incompatible without SWD recovery
+          - Possible bsim_west manifest changes (our bsim-west2nix.toml regenerates automatically)
+
+          See the NCS migration guide and release notes:
+          - https://docs.nordicsemi.com/bundle/ncs-latest/page/nrf/releases_and_maturity/migration/migration_guide_${{ steps.major.outputs.target_major }}.0.html
+          - https://github.com/nrfconnect/sdk-nrf/releases/tag/${{ steps.major.outputs.latest }}
+
+          Existing TODO item: see \`TODO.md\` → "Upgrade to nRF Connect SDK v3.x"
+
+          This issue will stay open until we bump \`west.yml\` to v${{ steps.major.outputs.target_major }}.x.
+          EOF
+          )
+
+          if [ -n "$EXISTING" ]; then
+            echo "Tracking issue #$EXISTING already exists for v${{ steps.major.outputs.target_major }}.x — refreshing body"
+            gh issue edit "$EXISTING" -R ${{ github.repository }} --body "$BODY"
+          else
+            echo "Opening new tracking issue for v${{ steps.major.outputs.target_major }}.x"
+            gh issue create -R ${{ github.repository }} \
+              --title "$TITLE" \
+              --body "$BODY" \
+              --label automated,ncs-major-bump
+          fi
