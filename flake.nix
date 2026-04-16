@@ -99,6 +99,11 @@
           mv everytag $sourceRoot/
           cd $sourceRoot
           runHook postConfigure
+          # NCS 3.x imports python scripts via west2nix's fake-repo mechanism,
+          # which strips the executable bit. Sysbuild/MCUboot invoke these
+          # (imgtool, zephyr_module.py, etc.) directly; without +x they fail
+          # with `find_program: imgtool.py not found` or exec-permission errors.
+          find zephyr/scripts bootloader/mcuboot/scripts modules -type f -name '*.py' -exec chmod +x {} +
           # zephyr_module.py (invoked by sysbuild/MCUboot) reads the manifest
           # project's git metadata via `git rev-parse HEAD`. The west2nix hook
           # only fakes git repos for imported projects, not the manifest dir
