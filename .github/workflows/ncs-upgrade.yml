@@ -27,13 +27,18 @@ jobs:
           echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
           echo "Current NCS: $CURRENT (major v${CURRENT_MAJOR})"
 
-          # Latest non-prerelease tag matching current major version.
-          # Major bumps (v2.x → v3.x) are explicitly OUT of scope here —
-          # those always need manual migration work. Tracked in TODO.md.
+          # gh release list orders by CREATION DATE, not semver. Nordic
+          # occasionally publishes service releases for older minors after
+          # newer ones (e.g. v2.6.5 after v2.9.2), so we must sort by version.
+          # Major bumps (v2 → v3) are OUT of scope — those need manual
+          # migration, tracked in TODO.md.
+          # Match only plain vX.Y.Z tags for our current major; reject
+          # board-specific service tags like v2.9.0-nRF54H20-1.
           LATEST=$(gh release list -R nrfconnect/sdk-nrf \
             --exclude-drafts --exclude-pre-releases \
-            -L 30 --json tagName \
-            --jq "[.[] | .tagName | select(startswith(\"v${CURRENT_MAJOR}.\"))] | .[0] // \"\"")
+            -L 50 --json tagName \
+            --jq ".[] | .tagName | select(test(\"^v${CURRENT_MAJOR}\\\\.[0-9]+\\\\.[0-9]+$\"))" \
+            | sort -V | tail -1)
 
           if [ -z "$LATEST" ]; then
             echo "No v${CURRENT_MAJOR}.x release found on NCS repo"
@@ -41,11 +46,14 @@ jobs:
             exit 0
           fi
 
-          echo "Latest v${CURRENT_MAJOR}.x: $LATEST"
+          echo "Highest v${CURRENT_MAJOR}.x: $LATEST"
           echo "latest=$LATEST" >> "$GITHUB_OUTPUT"
 
-          if [ "$CURRENT" = "$LATEST" ]; then
-            echo "Already on latest v${CURRENT_MAJOR}.x"
+          # Compare current vs latest by semver — only upgrade if latest is
+          # strictly newer.
+          HIGHEST=$(printf '%s\n%s\n' "$CURRENT" "$LATEST" | sort -V | tail -1)
+          if [ "$HIGHEST" = "$CURRENT" ]; then
+            echo "Current ($CURRENT) is already >= latest ($LATEST)"
             echo "up-to-date=true" >> "$GITHUB_OUTPUT"
           else
             echo "Upgrade available: $CURRENT → $LATEST"
