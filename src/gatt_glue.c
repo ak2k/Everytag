@@ -374,10 +374,14 @@ void start_settings_adv(void) {
     if (err) {
         printk("Error at setting auth callbacks (err %d)\n", err);
     }
+    // Settings mode wants fast rediscovery after user button press. FAST_INT_1
+    // (30-60 ms) per Zephyr include/zephyr/bluetooth/bluetooth.h. Preserves
+    // USE_IDENTITY so the controller's configured MAC (set via set_mac) is
+    // used rather than a random address.
     err = bt_le_adv_start(BT_LE_ADV_PARAM(
             BT_LE_ADV_OPT_USE_IDENTITY | BT_LE_ADV_OPT_CONN,
-            SETTINGS_ADV_INTERVAL * 1.6 - 20,
-            SETTINGS_ADV_INTERVAL * 1.6 + 20, NULL),
+            BT_GAP_ADV_FAST_INT_MIN_1,
+            BT_GAP_ADV_FAST_INT_MAX_1, NULL),
         ad, ARRAY_SIZE(ad), NULL, 0);
     if (err) {
         printk("Settings Advertising failed to start (err %d)\n", err);
