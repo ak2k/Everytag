@@ -10,6 +10,16 @@ inputs:
   cachix-auth-token:
     description: Token for cachix-action (optional; pull-only if omitted)
     required: false
+  cache-scope:
+    description: |
+      Suffix appended to the cache key so each job type gets its own cache.
+      Without this, fast jobs (lint, cppcheck) win the first-writer-wins
+      save race with their tiny /nix/store, leaving firmware builds to fall
+      back to Cachix for the whole toolchain. Pass github.job for per-job
+      scoping (the workflow must set this; it is not available as a default
+      inside a composite action's input).
+    required: false
+    default: default
 
 runs:
   using: composite
@@ -18,11 +28,13 @@ runs:
 
     - uses: nix-community/cache-nix-action@v7
       with:
-        primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.lock', 'west2nix.toml') }}
-        restore-prefixes-first-match: nix-${{ runner.os }}-
-        gc-max-store-size-linux: 5368709120 # 5 GB
+        primary-key: nix-${{ runner.os }}-${{ inputs.cache-scope }}-${{ hashFiles('flake.lock', 'west2nix.toml') }}
+        restore-prefixes-first-match: |
+          nix-${{ runner.os }}-${{ inputs.cache-scope }}-
+          nix-${{ runner.os }}-
+        gc-max-store-size-linux: 5368709120 # 5 GB per scope
         purge: true
-        purge-prefixes: nix-${{ runner.os }}-
+        purge-prefixes: nix-${{ runner.os }}-${{ inputs.cache-scope }}-
         purge-created: 604800 # 7 days
 
     - uses: cachix/cachix-action@v17

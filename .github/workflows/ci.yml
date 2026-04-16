@@ -26,6 +26,7 @@ jobs:
       - uses: ./.github/actions/setup-nix
         with:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          cache-scope: ${{ github.job }}
       - name: Build and run tests
         run: nix run .#test
 
@@ -38,6 +39,7 @@ jobs:
       - uses: ./.github/actions/setup-nix
         with:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          cache-scope: ${{ github.job }}
       - name: Run Bumble BLE client tests
         run: nix run .#test-ble
 
@@ -50,6 +52,7 @@ jobs:
       - uses: ./.github/actions/setup-nix
         with:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          cache-scope: ${{ github.job }}
       - name: Check formatting
         run: nix run .#lint
 
@@ -79,6 +82,10 @@ jobs:
       - uses: ./.github/actions/setup-nix
         with:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          # Shared with release.yml's build, so firmware cache is reused
+          # across both workflows. All firmware variants share ~90% of
+          # their /nix/store (toolchain, NCS modules, west-deps).
+          cache-scope: build
       - name: Build ${{ matrix.pkg }}
         run: |
           nix build .#${{ matrix.pkg }} -L
@@ -122,5 +129,6 @@ jobs:
       - uses: ./.github/actions/setup-nix
         with:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          cache-scope: ${{ github.job }}
       - name: Run cppcheck
         run: nix run .#cppcheck

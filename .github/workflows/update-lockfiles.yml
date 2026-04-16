@@ -22,6 +22,8 @@ jobs:
       - uses: ./.github/actions/setup-nix
         with:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          # Runs nix flake check + smoke-builds firmware → reuse build scope
+          cache-scope: build
 
       - name: Update flake inputs
         run: nix flake update
