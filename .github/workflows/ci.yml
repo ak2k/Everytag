@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [cpp-migration, main]
+    branches: [main]
   pull_request:
     branches: [main]
 
@@ -12,41 +12,36 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+
+      - uses: cachix/install-nix-action@v31
 
       - name: Build and run tests
-        run: |
-          cd tests/host
-          cmake -B build \
-            -DCMAKE_CXX_COMPILER=g++ \
-            -DCMAKE_C_COMPILER=gcc
-          cmake --build build
-          ./build/host_tests
+        run: nix run .#test
 
   ble-client-tests:
     name: BLE client tests (Bumble)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: astral-sh/setup-uv@v6
+      - uses: cachix/install-nix-action@v31
 
       - name: Run Bumble BLE client tests
-        run: uv run --with bumble --with pytest --with pytest-asyncio pytest tests/ble_client/ -v
+        run: nix run .#test-ble
 
   clang-format:
     name: clang-format check
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - name: Install clang-format
-        run: sudo apt-get update && sudo apt-get install -y clang-format
+      - uses: cachix/install-nix-action@v31
 
       - name: Check formatting
-        run: clang-format --dry-run --Werror src/*.cpp src/*.hpp
+        run: nix run .#lint
 
   cross-compile:
     name: Cross-compile (${{ matrix.board }}${{ matrix.dfu && ' +DFU' || '' }})
@@ -76,21 +71,15 @@ jobs:
             nix: false
             dfu: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - name: Install Nix
-        if: matrix.nix
-        uses: cachix/install-nix-action@v31
+      - uses: cachix/install-nix-action@v31
 
       - name: Build firmware (pure Nix)
         if: matrix.nix
         run: |
           nix build .#firmware -L
           cat result/size.txt
-
-      - name: Build firmware (west)
-        if: "!matrix.nix && !matrix.dfu"
-        uses: cachix/install-nix-action@v31
 
       - name: Build firmware (west build)
         if: "!matrix.nix && !matrix.dfu"
@@ -103,10 +92,6 @@ jobs:
             arm-none-eabi-size build-out/zephyr/zephyr.elf
           '
 
-      - name: Install Nix (DFU)
-        if: matrix.dfu
-        uses: cachix/install-nix-action@v31
-
       - name: Build firmware (DFU + MCUboot)
         if: matrix.dfu
         run: |
@@ -114,9 +99,6 @@ jobs:
             west init -l .
             cd .. && west update --narrow -o=--depth=1
             cd $OLDPWD
-            # Ensure pykwalify is importable by any Python CMake finds
-            # (Nix has multiple Python interpreters; sysbuild sub-projects
-            # may resolve to the base one without site-packages)
             export PYTHONPATH=$(python3 -c "import site; print('"'"':'"'"'.join(site.getsitepackages()))")
             west build --board ${{ matrix.board }} -d build-dfu --pristine \
               -- -DEXTRA_CONF_FILE=dfu.conf
@@ -131,10 +113,10 @@ jobs:
     permissions:
       security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         with:
           languages: cpp
           queries: security-and-quality
@@ -148,21 +130,16 @@ jobs:
           cmake --build build
 
       - name: Perform CodeQL analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
 
   cppcheck:
     name: cppcheck
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - name: Install cppcheck
-        run: sudo apt-get update && sudo apt-get install -y cppcheck
+      - uses: cachix/install-nix-action@v31
 
       - name: Run cppcheck
-        run: |
-          cppcheck --enable=warning,performance,portability \
-            --std=c++20 --error-exitcode=1 \
-            --suppress=missingIncludeSystem \
-            src/*.cpp src/*.hpp
+        run: nix run .#cppcheck
