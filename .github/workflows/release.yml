@@ -21,20 +21,28 @@ jobs:
           - { pkg: firmware-nrf52810-release, label: nrf52810 }
           - { pkg: firmware-nrf52832-release, label: nrf52832 }
           - { pkg: firmware-nrf52833-release, label: nrf52833 }
+          - { pkg: firmware-nrf52840-release, label: nrf52840 }
           - { pkg: firmware-nrf54l15-release, label: nrf54l15 }
+          - { pkg: firmware-thingy52-release, label: thingy52 }
           # Non-DFU dev (logging + RTT console, full chip flash)
           - { pkg: firmware-nrf52810, label: nrf52810-dev }
           - { pkg: firmware-nrf52832, label: nrf52832-dev }
           - { pkg: firmware-nrf52833, label: nrf52833-dev }
+          - { pkg: firmware-nrf52840, label: nrf52840-dev }
           - { pkg: firmware-nrf54l15, label: nrf54l15-dev }
+          - { pkg: firmware-thingy52, label: thingy52-dev }
           # DFU release (MCUboot + app, signed, for OTA)
           - { pkg: firmware-nrf52832-dfu, label: nrf52832-dfu }
           - { pkg: firmware-nrf52833-dfu, label: nrf52833-dfu }
+          - { pkg: firmware-nrf52840-dfu, label: nrf52840-dfu }
           - { pkg: firmware-nrf54l15-dfu, label: nrf54l15-dfu }
+          - { pkg: firmware-thingy52-dfu, label: thingy52-dfu }
           # DFU dev (MCUboot + app with logging — for DFU bring-up)
           - { pkg: firmware-nrf52832-dfu-dev, label: nrf52832-dfu-dev }
           - { pkg: firmware-nrf52833-dfu-dev, label: nrf52833-dfu-dev }
+          - { pkg: firmware-nrf52840-dfu-dev, label: nrf52840-dfu-dev }
           - { pkg: firmware-nrf54l15-dfu-dev, label: nrf54l15-dfu-dev }
+          - { pkg: firmware-thingy52-dfu-dev, label: thingy52-dfu-dev }
     permissions:
       actions: write # cache-nix-action needs this to purge old caches
       contents: read
@@ -106,8 +114,14 @@ jobs:
           # Previous tag for "changes since" section
           PREV_TAG=$(git tag --list 'v*' --sort=-v:refname | grep -v "^${TAG}\$" | head -1 || true)
 
-          declare -A FLASH_KB=( [nrf52810]=192 [nrf52832]=512 [nrf52833]=512 [nrf54l15]=1524 )
-          declare -A DFU_SLOT_KB=( [nrf52832]=224 [nrf52833]=224 [nrf54l15]=674 )
+          declare -A FLASH_KB=(
+            [nrf52810]=192 [nrf52832]=512 [nrf52833]=512
+            [nrf52840]=1024 [nrf54l15]=1524 [thingy52]=512
+          )
+          declare -A DFU_SLOT_KB=(
+            [nrf52832]=224 [nrf52833]=224
+            [nrf52840]=475 [nrf54l15]=674 [thingy52]=224
+          )
 
           {
             echo "Built against **nRF Connect SDK ${NCS_VER}** (Zephyr ${ZEPHYR_VER})."
@@ -118,7 +132,7 @@ jobs:
             echo
             echo "| SoC | Release | Dev | Available | Release Usage |"
             echo "|-----|--------:|----:|----------:|--------------:|"
-            for board in nrf52810 nrf52832 nrf52833 nrf54l15; do
+            for board in nrf52810 nrf52832 nrf52833 nrf52840 nrf54l15 thingy52; do
               avail_kb=${FLASH_KB[$board]}
               read -r text data _ < <(tail -1 "release/everytag-${board}-${TAG}-size.txt")
               rel_kb=$(( (text + data + 512) / 1024 ))
@@ -132,7 +146,7 @@ jobs:
             echo
             echo "| SoC | Release | Dev | App slot | Release Usage |"
             echo "|-----|--------:|----:|---------:|--------------:|"
-            for board in nrf52832 nrf52833 nrf54l15; do
+            for board in nrf52832 nrf52833 nrf52840 nrf54l15 thingy52; do
               slot_kb=${DFU_SLOT_KB[$board]}
               read -r text data _ < <(tail -1 "release/everytag-${board}-dfu-${TAG}-size.txt")
               rel_kb=$(( (text + data + 512) / 1024 ))

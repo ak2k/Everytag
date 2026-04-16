@@ -48,69 +48,36 @@ jobs:
       - name: Check formatting
         run: nix run .#lint
 
-  cross-compile:
-    name: Cross-compile (${{ matrix.board }}${{ matrix.dfu && ' +DFU' || '' }})
+  # All shipping firmware variants. Nix's mkFirmware invokes cmake the same
+  # way `west build` does, so Nix coverage subsumes west-build coverage.
+  build:
+    name: Build ${{ matrix.pkg }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     strategy:
+      fail-fast: false
       matrix:
-        include:
-          - board: kkm_p1_nrf52810
-            nix: true
-          - board: nrf52dk/nrf52832
-            nix: false
-          - board: nrf52840dk/nrf52840
-            nix: false
-          - board: nrf52833dk/nrf52833
-            nix: false
-          - board: thingy52/nrf52832
-            nix: false
-          # DFU builds (sysbuild + MCUboot)
-          - board: nrf52dk/nrf52832
-            nix: false
-            dfu: true
-          - board: nrf52833dk/nrf52833
-            nix: false
-            dfu: true
-          - board: nrf54l15dk/nrf54l15/cpuapp
-            nix: false
-            dfu: true
+        pkg:
+          - firmware-nrf52810
+          - firmware-nrf52832
+          - firmware-nrf52833
+          - firmware-nrf52840
+          - firmware-nrf54l15
+          - firmware-thingy52
+          - firmware-nrf52832-dfu
+          - firmware-nrf52833-dfu
+          - firmware-nrf52840-dfu
+          - firmware-nrf54l15-dfu
+          - firmware-thingy52-dfu
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-nix
         with:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
-
-      - name: Build firmware (pure Nix)
-        if: matrix.nix
+      - name: Build ${{ matrix.pkg }}
         run: |
-          nix build .#firmware -L
+          nix build .#${{ matrix.pkg }} -L
           cat result/size.txt
-
-      - name: Build firmware (west build)
-        if: "!matrix.nix && !matrix.dfu"
-        run: |
-          nix develop --command bash -c '
-            west init -l .
-            cd .. && west update --narrow -o=--depth=1
-            cd $OLDPWD
-            west build --board ${{ matrix.board }} -d build-out --pristine --no-sysbuild
-            arm-none-eabi-size build-out/zephyr/zephyr.elf
-          '
-
-      - name: Build firmware (DFU + MCUboot)
-        if: matrix.dfu
-        run: |
-          nix develop --command bash -c '
-            west init -l .
-            cd .. && west update --narrow -o=--depth=1
-            cd $OLDPWD
-            export PYTHONPATH=$(python3 -c "import site; print('"'"':'"'"'.join(site.getsitepackages()))")
-            west build --board ${{ matrix.board }} -d build-dfu --pristine \
-              -- -DEXTRA_CONF_FILE=dfu.conf
-            APP_ELF=$(find build-dfu -name zephyr.elf -not -path "*/mcuboot/*" -print -quit)
-            arm-none-eabi-size "$APP_ELF"
-          '
 
   codeql:
     name: CodeQL analysis

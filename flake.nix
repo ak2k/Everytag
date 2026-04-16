@@ -237,6 +237,18 @@
             dfu = true;
           }
           {
+            short = "nrf52840";
+            board = "nrf52840dk/nrf52840";
+            boardRoot = false;
+            dfu = true; # 1 MB flash, plenty of room
+          }
+          {
+            short = "thingy52";
+            board = "thingy52/nrf52832";
+            boardRoot = false;
+            dfu = true; # same nRF52832 SoC as nrf52dk/nrf52832
+          }
+          {
             short = "nrf54l15";
             board = "nrf54l15dk/nrf54l15/cpuapp";
             boardRoot = false;
