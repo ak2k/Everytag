@@ -83,9 +83,152 @@ const struct device* const i2c_dev = DEVICE_DT_GET(DT_NODELABEL(i2c0));
 static const struct gpio_dt_spec sw0 = GPIO_DT_SPEC_GET(DT_ALIAS(sw0), gpios);
 #endif
 
+// ---- Advertising lifecycle (Zephyr 4.0+ .recycled pattern) ----
+//
+// Zephyr 4.0 removed auto-resume-after-disconnect. Firmware must register
+// a .recycled callback (fires after conn object is released, post-
+// .disconnected) that re-submits a work item; the handler then calls
+// bt_le_adv_start from a workqueue context (submitting to bt_host is
+// forbidden from .recycled per zephyr/include/zephyr/bluetooth/conn.h).
+//
+// Multi-mode: this firmware advertises in Settings (connectable), AirTag,
+// FMDN, or iBeacon (all non-connectable). Only Settings ever hits
+// .recycled in practice (others aren't connectable), but the handler
+// supports all four modes — robustness against state transitions during
+// a brief connection window.
+//
+// Synchronous contract preserved: start_*_adv() methods call bt_le_adv_start
+// directly (not via workqueue), matching the StateMachine's expectations
+// that adv is running when start_*_adv() returns. The workqueue handler
+// only fires on .recycled-triggered restarts.
+namespace {
+
+enum class AdvMode : uint8_t { None, Settings, AirTag, FMDN, iBeacon };
+
+struct AdvParams {
+    AdvMode mode = AdvMode::None;
+    uint16_t interval_min = 0;
+    uint16_t interval_max = 0;
+    int batt_voltage = 0; // iBeacon only
+};
+
+AdvParams current_adv_{}; // updated by the direct-start paths
+bool adv_enabled_ = true; // cleared in ShuttingDown/FirmwareUpload via adv_set_allowed()
+
+K_THREAD_STACK_DEFINE(adv_wq_stack_area, 768);
+struct k_work_q adv_wq;
+struct k_work adv_restart_work;
+bool adv_wq_initialized = false;
+
+int start_airtag_direct(uint16_t intvl_min, uint16_t intvl_max);
+int start_fmdn_direct(uint16_t intvl_min, uint16_t intvl_max);
+int start_ibeacon_direct(int batt_voltage);
+
+void adv_restart_handler(struct k_work*) {
+    if (!adv_enabled_) {
+        return;
+    }
+    // Snapshot current mode — the state machine may have changed it; in that
+    // case k_work_cancel_sync() in the transition should have prevented us
+    // from running, but handle defensively.
+    AdvParams req = current_adv_;
+    int err = -EINVAL;
+    for (int attempt = 0; attempt < 5; ++attempt) {
+        switch (req.mode) {
+        case AdvMode::None:
+            return;
+        case AdvMode::Settings:
+            ::start_settings_adv();
+            return; // settings adv logs its own errors
+        case AdvMode::AirTag:
+            err = start_airtag_direct(req.interval_min, req.interval_max);
+            break;
+        case AdvMode::FMDN:
+            err = start_fmdn_direct(req.interval_min, req.interval_max);
+            break;
+        case AdvMode::iBeacon:
+            err = start_ibeacon_direct(req.batt_voltage);
+            break;
+        }
+        if (err == 0) {
+            return;
+        }
+        if (err != -EAGAIN && err != -ENOMEM) {
+            printk("adv restart bailed (err %d, mode %d)\n", err, (int)req.mode);
+            return;
+        }
+        k_sleep(K_MSEC(100));
+    }
+    printk("adv restart exhausted retries (mode %d)\n", (int)req.mode);
+}
+
+int start_airtag_direct(uint16_t intvl_min, uint16_t intvl_max) {
+    return ::bt_le_adv_start(
+        BT_LE_ADV_PARAM(BT_LE_ADV_OPT_USE_IDENTITY, intvl_min, intvl_max, NULL), adv_airtag,
+        ADV_AIRTAG_COUNT, NULL, 0);
+}
+
+int start_fmdn_direct(uint16_t intvl_min, uint16_t intvl_max) {
+    return ::bt_le_adv_start(
+        BT_LE_ADV_PARAM(BT_LE_ADV_OPT_USE_IDENTITY, intvl_min, intvl_max, NULL), adv_fmdn,
+        ADV_FMDN_COUNT, NULL, 0);
+}
+
+int start_ibeacon_direct(int batt_voltage) {
+    std::memcpy(iBeacon_data, adv_ibeacon[1].data, adv_ibeacon[1].data_len);
+    adv_ibeacon[1].data = iBeacon_data;
+    iBeacon_data[24] = static_cast<uint8_t>((batt_voltage + 50) / 100);
+    return ::bt_le_adv_start(BT_LE_ADV_PARAM(BT_LE_ADV_OPT_USE_IDENTITY, 11200, 12800, NULL),
+                             adv_ibeacon, ADV_IBEACON_COUNT, NULL, 0);
+}
+
+void adv_wq_init_once() {
+    if (adv_wq_initialized) {
+        return;
+    }
+    k_work_queue_init(&adv_wq);
+    k_work_queue_start(&adv_wq, adv_wq_stack_area, K_THREAD_STACK_SIZEOF(adv_wq_stack_area),
+                       K_PRIO_PREEMPT(7), NULL);
+    k_work_init(&adv_restart_work, adv_restart_handler);
+    adv_wq_initialized = true;
+}
+
+} // anonymous namespace
+
+// Called from gatt_glue.c's .recycled callback. Re-submits restart work.
+// No direct bt_le_adv_start here: conn.h forbids submitting bt_host ops
+// from .recycled context.
+extern "C" void beacon_adv_recycled_cb(void) {
+    if (current_adv_.mode == AdvMode::None) {
+        return;
+    }
+    if (!adv_wq_initialized) {
+        adv_wq_init_once();
+    }
+    k_work_submit_to_queue(&adv_wq, &adv_restart_work);
+}
+
+// Called from beacon_state.cpp before any adv-mode-changing transition.
+// Purges any pending recycled-triggered restart so it doesn't race the
+// new mode.
+extern "C" void beacon_adv_cancel_sync(void) {
+    if (!adv_wq_initialized) {
+        return;
+    }
+    k_work_cancel_sync(&adv_restart_work, NULL);
+}
+
+// Called from StateMachine entry to ShuttingDown / FirmwareUpload. The
+// handler checks adv_enabled_ before touching bt_host.
+extern "C" void beacon_adv_set_allowed(int allowed) {
+    adv_enabled_ = (allowed != 0);
+}
+
 namespace beacon {
 
-ZephyrHardware::ZephyrHardware(SettingsManager& settings) : settings_(settings) {}
+ZephyrHardware::ZephyrHardware(SettingsManager& settings) : settings_(settings) {
+    adv_wq_init_once();
+}
 
 uint32_t ZephyrHardware::uptime_seconds() {
     return static_cast<uint32_t>(k_uptime_seconds());
@@ -118,22 +261,27 @@ void ZephyrHardware::bt_disable() {
 }
 
 int ZephyrHardware::adv_start(bool connectable, int interval_min, int interval_max, bool use_fmdn) {
-    uint32_t options = BT_LE_ADV_OPT_USE_IDENTITY;
+    // Connectable path is Settings mode and goes through start_settings_adv().
+    // This entry point is for non-connectable broadcast (AirTag/FMDN).
     if (connectable) {
-        options |= BT_LE_ADV_OPT_CONN;
+        return -EINVAL;
     }
-    if (use_fmdn) {
-        return ::bt_le_adv_start(BT_LE_ADV_PARAM(options, static_cast<uint32_t>(interval_min),
-                                                 static_cast<uint32_t>(interval_max), NULL),
-                                 adv_fmdn, ADV_FMDN_COUNT, NULL, 0);
+    AdvParams req{};
+    req.mode = use_fmdn ? AdvMode::FMDN : AdvMode::AirTag;
+    req.interval_min = static_cast<uint16_t>(interval_min);
+    req.interval_max = static_cast<uint16_t>(interval_max);
+    int err = use_fmdn ? start_fmdn_direct(req.interval_min, req.interval_max)
+                       : start_airtag_direct(req.interval_min, req.interval_max);
+    if (err == 0) {
+        current_adv_ = req;
     }
-    return ::bt_le_adv_start(BT_LE_ADV_PARAM(options, static_cast<uint32_t>(interval_min),
-                                             static_cast<uint32_t>(interval_max), NULL),
-                             adv_airtag, ADV_AIRTAG_COUNT, NULL, 0);
+    return err;
 }
 
 int ZephyrHardware::adv_stop() {
-    return ::bt_le_adv_stop();
+    int err = ::bt_le_adv_stop();
+    current_adv_.mode = AdvMode::None;
+    return err;
 }
 
 int ZephyrHardware::adv_update_airtag() {
@@ -366,23 +514,23 @@ void ZephyrHardware::prepare_fmdn(const uint8_t* key) {
 
 void ZephyrHardware::start_settings_adv() {
     ::start_settings_adv();
+    current_adv_.mode = AdvMode::Settings;
 }
 
 void ZephyrHardware::stop_settings_adv() {
     ::stop_settings_adv();
+    current_adv_.mode = AdvMode::None;
 }
 
 void ZephyrHardware::broadcast_ibeacon(int batt_voltage) {
     printk("Starting broadcasting iBeacon\n");
-    std::memcpy(iBeacon_data, adv_ibeacon[1].data, adv_ibeacon[1].data_len);
-    adv_ibeacon[1].data = iBeacon_data;
-    iBeacon_data[24] = static_cast<uint8_t>((batt_voltage + 50) / 100);
-
-    int err = ::bt_le_adv_start(BT_LE_ADV_PARAM(BT_LE_ADV_OPT_USE_IDENTITY, 11200, 12800, NULL),
-                                adv_ibeacon, ADV_IBEACON_COUNT, NULL, 0);
+    int err = start_ibeacon_direct(batt_voltage);
     if (err) {
         printk("iBeacon advertising start failed (err %d)\n", err);
+        return;
     }
+    current_adv_.mode = AdvMode::iBeacon;
+    current_adv_.batt_voltage = batt_voltage;
 }
 
 int ZephyrHardware::accel_read() {
