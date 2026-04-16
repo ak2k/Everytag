@@ -35,15 +35,15 @@ jobs:
           - { pkg: firmware-nrf52832-dfu-dev, label: nrf52832-dfu-dev }
           - { pkg: firmware-nrf52833-dfu-dev, label: nrf52833-dfu-dev }
           - { pkg: firmware-nrf54l15-dfu-dev, label: nrf54l15-dfu-dev }
+    permissions:
+      actions: write # cache-nix-action needs this to purge old caches
+      contents: read
     steps:
       - uses: actions/checkout@v6
 
-      - uses: cachix/install-nix-action@v31
-
-      - uses: cachix/cachix-action@v17
+      - uses: ./.github/actions/setup-nix
         with:
-          name: ak2k
-          authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}"
+          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
       - name: Build ${{ matrix.pkg }}
         run: nix build .#${{ matrix.pkg }} -L -o result

@@ -1,0 +1,31 @@
+name: Set up Nix with cached store
+description: |
+  Install Nix, restore /nix/store from GHA cache (keyed to flake.lock +
+  west2nix.toml), and configure the shared Cachix substituter.
+
+  Layered read order: local Nix store → GHA cache → Cachix → build from
+  source. Post-job saves the store back to GHA cache on a fresh key.
+
+inputs:
+  cachix-auth-token:
+    description: Token for cachix-action (optional; pull-only if omitted)
+    required: false
+
+runs:
+  using: composite
+  steps:
+    - uses: cachix/install-nix-action@v31
+
+    - uses: nix-community/cache-nix-action@v7
+      with:
+        primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.lock', 'west2nix.toml') }}
+        restore-prefixes-first-match: nix-${{ runner.os }}-
+        gc-max-store-size-linux: 5368709120 # 5 GB
+        purge: true
+        purge-prefixes: nix-${{ runner.os }}-
+        purge-created: 604800 # 7 days
+
+    - uses: cachix/cachix-action@v17
+      with:
+        name: ak2k
+        authToken: ${{ inputs.cachix-auth-token }}

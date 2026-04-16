@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main]
 
+# Required by cache-nix-action to purge old caches
+permissions:
+  actions: write
+  contents: read
+
 concurrency:
   group: bsim-${{ github.ref }}
   cancel-in-progress: true
@@ -17,12 +22,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: cachix/install-nix-action@v31
-
-      - uses: cachix/cachix-action@v17
+      - uses: ./.github/actions/setup-nix
         with:
-          name: ak2k
-          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
       - name: Build and run BabbleSim tests
         run: nix build .#bsim-test -L
