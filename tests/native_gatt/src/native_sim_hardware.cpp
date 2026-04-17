@@ -169,14 +169,13 @@ void NativeSimHardware::stop_settings_adv() {
 }
 
 void NativeSimHardware::broadcast_ibeacon(int batt_voltage) {
+    printk("broadcast_ibeacon: starting (voltage=%d)\n", batt_voltage);
     std::memcpy(iBeacon_data, adv_ibeacon[1].data, adv_ibeacon[1].data_len);
     adv_ibeacon[1].data = iBeacon_data;
     iBeacon_data[24] = static_cast<uint8_t>((batt_voltage + 50) / 100);
     int err = ::bt_le_adv_start(BT_LE_ADV_PARAM(BT_LE_ADV_OPT_USE_IDENTITY, 11200, 12800, NULL),
                                 adv_ibeacon, ADV_IBEACON_COUNT, NULL, 0);
-    if (err) {
-        printk("iBeacon advertising start failed (err %d)\n", err);
-    }
+    printk("broadcast_ibeacon: bt_le_adv_start returned %d\n", err);
 }
 
 void NativeSimHardware::set_status_bytes(uint8_t airtag_status, uint8_t fmdn_status) {

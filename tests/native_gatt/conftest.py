@@ -11,6 +11,7 @@ firmware binary, then provides a connected GATT client for tests.
 """
 
 import asyncio
+import logging
 import os
 import signal
 from pathlib import Path
@@ -22,6 +23,9 @@ from bumble.device import Device, Peer
 from bumble.host import Host
 from bumble.link import LocalLink
 from bumble.transport import open_transport
+
+# Bumble logging — keep at WARNING for normal runs, bump to DEBUG to trace HCI
+logging.basicConfig(level=logging.WARNING)
 
 # ---- Everytag GATT UUIDs (from gatt_glue.c) ----
 
@@ -89,6 +93,10 @@ async def firmware_env():
     Architecture:
         Bumble TCP server (Controller on LocalLink) <-- TCP H4 --> native_sim firmware
         Bumble in-process Device (scanner/client) <-- LocalLink --> same virtual radio
+
+    Critical ordering: the Controller must be created immediately when the
+    transport connects, BEFORE the firmware sends its first HCI command.
+    Otherwise bt_enable()'s HCI_Reset goes unprocessed and the firmware hangs.
     """
     exe_path = Path(os.environ.get("NATIVE_GATT_EXE", DEFAULT_EXE)).resolve()
     if not exe_path.exists():
@@ -97,37 +105,9 @@ async def firmware_env():
     port = _get_free_port()
     link = LocalLink()
 
-    # open_transport("tcp-server:...") creates a TCP server and blocks until
-    # a client connects. We need to launch both the server and the firmware
-    # concurrently: server starts listening, firmware connects to it.
-    async def start_transport():
-        return await open_transport(f"tcp-server:_:{port}")
-
-    async def start_firmware():
-        # Small delay to let the TCP server start listening
-        await asyncio.sleep(0.3)
-        return await asyncio.create_subprocess_exec(
-            str(exe_path),
-            f"--bt-dev=127.0.0.1:{port}",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-
-    transport, fw_proc = await asyncio.wait_for(
-        asyncio.gather(start_transport(), start_firmware()),
-        timeout=15.0,
-    )
-
-    # Controller must stay alive (registers on link via side effect)
-    fw_ctrl = Controller(  # noqa: F841
-        "FirmwareCtrl",
-        host_source=transport.source,
-        host_sink=transport.sink,
-        link=link,
-        public_address="F0:F1:F2:F3:F4:F5",
-    )
-
-    # Controller for the test client (in-process)
+    # Create the test client FIRST and start scanning. LocalLink delivers
+    # advertisements synchronously when they start — late scanners miss them.
+    # The client must be scanning BEFORE the firmware starts advertising.
     client_ctrl = Controller("ClientCtrl", link=link)
     client_host = Host(client_ctrl, client_ctrl)
     client_device = Device(
@@ -137,11 +117,54 @@ async def firmware_env():
     )
     await client_device.power_on()
 
+    found_address = None
+    adv_event = asyncio.Event()
+
+    def on_advertisement(advertisement):
+        nonlocal found_address
+        found_address = advertisement.address
+        adv_event.set()
+
+    client_device.on("advertisement", on_advertisement)
+    await client_device.start_scanning()
+
+    # Now launch the firmware. The Controller must be created immediately when
+    # the transport connects, before the firmware sends HCI_Reset.
+    fw_ctrl_holder = []
+
+    async def start_transport_and_controller():
+        transport = await open_transport(f"tcp-server:_:{port}")
+        ctrl = Controller(
+            "FirmwareCtrl",
+            host_source=transport.source,
+            host_sink=transport.sink,
+            link=link,
+            public_address="F0:F1:F2:F3:F4:F5",
+        )
+        # Set random_address = public_address so LocalLink.send_acl_data uses
+        # the correct source address when the firmware (which uses identity/public
+        # addressing via BT_LE_ADV_OPT_USE_IDENTITY) sends ACL data back.
+        ctrl.random_address = ctrl.public_address
+        fw_ctrl_holder.append(ctrl)
+        return transport
+
+    async def start_firmware():
+        await asyncio.sleep(0.3)
+        return await asyncio.create_subprocess_exec(
+            str(exe_path),
+            f"--bt-dev=127.0.0.1:{port}",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+    transport, fw_proc = await asyncio.wait_for(
+        asyncio.gather(start_transport_and_controller(), start_firmware()),
+        timeout=15.0,
+    )
+
     try:
-        # Wait for the firmware to boot and start settings advertising.
-        # The state machine starts in Settings mode (connectable) when no keys are loaded.
-        # Give it time to init BLE, register GATT, and start advertising.
-        await asyncio.sleep(2.0)
+        # Wait for the firmware to boot, init BLE, and start advertising.
+        await asyncio.sleep(3.0)
 
         if fw_proc.returncode is not None:
             stdout = await fw_proc.stdout.read()
@@ -152,22 +175,9 @@ async def firmware_env():
                 f"stderr: {stderr.decode(errors='replace')}"
             )
 
-        # Scan for the firmware's advertisement
-        found_address = None
-        adv_event = asyncio.Event()
-
-        def on_advertisement(advertisement):
-            nonlocal found_address
-            found_address = advertisement.address
-            adv_event.set()
-
-        client_device.on("advertisement", on_advertisement)
-        await client_device.start_scanning()
-
         try:
             await asyncio.wait_for(adv_event.wait(), timeout=10.0)
         except asyncio.TimeoutError:
-            # Capture firmware output for debugging
             diag = ""
             if fw_proc.returncode is not None:
                 stdout = await fw_proc.stdout.read()
@@ -178,7 +188,6 @@ async def firmware_env():
                     f"\nstderr: {stderr.decode(errors='replace')[:2000]}"
                 )
             else:
-                # Read whatever stdout is available without blocking
                 try:
                     partial = await asyncio.wait_for(
                         fw_proc.stdout.read(4096), timeout=0.5
@@ -199,7 +208,6 @@ async def firmware_env():
         yield peer, connection, fw_proc
 
     finally:
-        # Clean up: terminate firmware process
         if fw_proc.returncode is None:
             fw_proc.send_signal(signal.SIGTERM)
             try:
