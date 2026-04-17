@@ -477,6 +477,51 @@
               cp $RUNDIR/bin/bs_nrf52_bsim_smp $out/
             '';
           };
+
+          # native_sim + Bumble GATT integration test (Linux only)
+          # Builds the real firmware for native_sim/native/64 with external BLE
+          # controller, then runs Python/Bumble tests against it over TCP HCI.
+          # Uses stdenv (not gccMultiStdenv) — 64-bit binary avoids i386 compat issues.
+          native-gatt-test = pkgs.stdenv.mkDerivation {
+            name = "everytag-native-gatt-test";
+            src = ./.;
+            nativeBuildInputs = commonBuildInputs ++ [ testPythonEnv ];
+            hardeningDisable = [ "fortify" ];
+            dontUseCmakeConfigure = true;
+            dontUseWestConfigure = true;
+            configurePhase = westConfigurePhase;
+
+            buildPhase = ''
+              export ZEPHYR_TOOLCHAIN_VARIANT=host
+              export ZEPHYR_BASE="$PWD/../zephyr"
+              SRCDIR=$PWD
+
+              echo "=== Building native_sim GATT firmware (64-bit) ==="
+              cmake -GNinja -B build-native-gatt \
+                -DCMAKE_BUILD_TYPE=MinSizeRel \
+                -DBOARD=native_sim/native/64 \
+                -DZEPHYR_TOOLCHAIN_VARIANT=host \
+                -DWEST_PYTHON=${pythonEnv}/bin/python3 \
+                -S tests/native_gatt
+              ninja -C build-native-gatt
+
+              echo "=== Verifying firmware binary ==="
+              file $SRCDIR/build-native-gatt/zephyr/zephyr.exe
+              ldd $SRCDIR/build-native-gatt/zephyr/zephyr.exe || true
+              $SRCDIR/build-native-gatt/zephyr/zephyr.exe --help 2>&1 | head -5 || true
+
+              echo "=== Running Bumble GATT integration tests ==="
+              export NATIVE_GATT_EXE=$SRCDIR/build-native-gatt/zephyr/zephyr.exe
+              export PYTEST_CACHE_DIR="''${TMPDIR:-/tmp}/pytest-cache"
+              ${testPythonEnv}/bin/pytest tests/native_gatt/ -v --tb=short
+            '';
+
+            installPhase = ''
+              mkdir -p $out
+              echo "All tests passed" > $out/result.txt
+              cp build-native-gatt/zephyr/zephyr.exe $out/native_gatt_test.exe
+            '';
+          };
         };
 
         devShells.default = pkgs.mkShell {
