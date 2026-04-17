@@ -153,8 +153,14 @@ jobs:
           TAG=${GITHUB_REF_NAME}
           mkdir -p sbom
 
+          # Realize firmware with a gcroot so the derivation + output
+          # stay in the store across both sbomnix calls. Flakeref is
+          # then used for sbomnix input so nixpkgs .meta attributes
+          # (license, homepage, CPE, purl) are available.
+          nix build .#firmware -o result-sbom -L
+
           # Buildtime scope: ~1150 packages (Zephyr, NCS, nrfxlib, mcuboot,
-          # toolchain, libc, mbedtls, TF-M). This is what security review,
+          # toolchain, libc, mbedtls, TF-M). What security review,
           # vuln scanners, and supply-chain audits actually need for
           # bare-metal firmware — it's the code compiled into the binary.
           nix shell nixpkgs#sbomnix -c sbomnix .#firmware --buildtime \
