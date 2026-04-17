@@ -151,15 +151,25 @@ jobs:
       - name: Generate SBOMs (SPDX + CycloneDX)
         run: |
           TAG=${GITHUB_REF_NAME}
-          # Build the canonical "everything" firmware drv and generate SBOMs
-          # for its runtime closure (covers all firmware variants' common base).
-          nix build .#firmware -o result-sbom -L
           mkdir -p sbom
-          nix shell nixpkgs#sbomnix -c sbomnix result-sbom \
-            --type=runtime \
-            --cdx=sbom/everytag-${TAG}.cdx.json \
-            --spdx=sbom/everytag-${TAG}.spdx.json \
-            --csv=sbom/everytag-${TAG}.csv
+
+          # Buildtime scope: ~1150 packages (Zephyr, NCS, nrfxlib, mcuboot,
+          # toolchain, libc, mbedtls, TF-M). This is what security review,
+          # vuln scanners, and supply-chain audits actually need for
+          # bare-metal firmware — it's the code compiled into the binary.
+          nix shell nixpkgs#sbomnix -c sbomnix .#firmware --buildtime \
+            --cdx=sbom/everytag-${TAG}-buildtime.cdx.json \
+            --spdx=sbom/everytag-${TAG}-buildtime.spdx.json \
+            --csv=sbom/everytag-${TAG}-buildtime-sbom.csv
+
+          # Runtime scope: the firmware store path's closure. Trivially
+          # small for bare-metal (no dynamic linking on device), but
+          # standard to ship for SBOM compliance (EO 14028).
+          nix shell nixpkgs#sbomnix -c sbomnix .#firmware \
+            --cdx=sbom/everytag-${TAG}-runtime.cdx.json \
+            --spdx=sbom/everytag-${TAG}-runtime.spdx.json \
+            --csv=sbom/everytag-${TAG}-runtime-sbom.csv
+
           ls -la sbom/
 
       - name: Generate release notes
