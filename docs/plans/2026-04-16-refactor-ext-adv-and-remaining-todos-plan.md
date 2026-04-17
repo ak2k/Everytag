@@ -1,7 +1,7 @@
 ---
 title: Extended-adv migration + remaining TODOs
 type: refactor
-status: active
+status: abandoned
 date: 2026-04-16
 ---
 

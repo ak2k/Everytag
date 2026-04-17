@@ -62,26 +62,22 @@ To resolve:
 - Re-enable signature-isolation test in DFU integration suite (currently skipped
   per plan docs/plans/2026-04-16-refactor-ncs-3.2.4-upgrade-plan.md Phase 0 decision)
 
-## Migrate advertising to extended-adv API (bt_le_ext_adv_*)
+## ~~Migrate advertising to extended-adv API (bt_le_ext_adv_*)~~ — DEFERRED INDEFINITELY
 
-Deferred from the NCS 2.9 → 3.2 migration. We currently use legacy
-`bt_le_adv_start` / `bt_le_adv_stop` / `bt_le_adv_update_data` and
-stop+restart to switch payload between AirTag / FMDN / iBeacon / settings
-modes. All current Zephyr 4.x / NCS 3.x samples (`multiple_adv_sets`,
-peripheral samples) use `bt_le_ext_adv_create` + `bt_le_ext_adv_set_data`
-+ `bt_le_ext_adv_start/stop` with one persistent `bt_le_ext_adv *` per
-payload and a per-set `bt_le_ext_adv_cb`.
+Prototyped and reverted (2026-04-16, branch `feat/ext-adv-and-todos`).
 
-Benefits:
-- Remove state-machine flag churn around adv mode switching
-  (`beacon_state.cpp` ~L52-80)
-- Unlock simultaneous non-connectable AirTag/FMDN + connectable settings
-  (impossible with legacy API)
-- Align with long-term Zephyr direction
+**Why not:** nrf52810 (24 KB RAM) overflows by 2004 B with the SDC multirole
+variant required for `CONFIG_BT_EXT_ADV=y`. The `#ifdef` split to maintain
+both code paths costs more in complexity than the benefit (simultaneous adv
+sets) delivers — especially since the primary production target gets nothing.
 
-Effort: medium — cross-cutting in `zephyr_hardware.cpp`, `beacon_state.cpp`,
-possibly `gatt_glue.c`. Legacy API still works in 3.2.x, so this is not
-blocking. Do after migration lands and is stable.
+**What was done instead:** cleaned up `IHardware` interface to use
+mode-specific `adv_start_airtag()` / `adv_start_fmdn()` instead of the
+boolean-encoded `adv_start(bool, int, int, bool)` (PR #12). Legacy
+`bt_le_adv_start` on all boards. `.recycled` workqueue bridge stays.
+
+**Revisit if:** simultaneous connectable + non-connectable advertising
+becomes a hard requirement, OR nrf52810 is deprecated from the board list.
 
 ## Fuzz the GATT settings handlers
 
