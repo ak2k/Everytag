@@ -307,6 +307,69 @@ host-testable shape (they live behind `SettingsManager` + `GATT validators`).
 The piece not yet host-testable is the raw BLE write decode in
 `gatt_glue.c`.
 
+## Reduce `kIntervalBatteryCheck` from 60s to 900s
+
+`src/beacon_state.hpp:52` currently triggers a battery ADC sample every
+minute (used at `src/beacon_state.cpp:261` via
+`StateMachine::handle_battery_check`). Battery voltage changes over
+hours/days — 60 s granularity is overkill. Each check powers up the
+ADC, takes 3 samples with 5 ms delays, and powers down; 15× fewer
+wakeups saves several µA averaged across the day.
+
+Affects all boards. Status-byte telemetry (`0x50000` mode in
+`src/beacon_logic.cpp`) refreshes at this cadence — 15-minute
+granularity is still adequate for field monitoring. Confirm by reading
+the status-byte mode 3 path before merging.
+
+One-line change in `src/beacon_state.hpp`. Note: `src/myboards.h:18`
+has a dead `INTERVAL_BATTERYCHECK 60` macro left over from pre-C++-
+refactor that can be deleted in the same commit.
+
+## Minimal libc on small-flash boards (nrf52810/nrf52805)
+
+`prj.conf` forces `CONFIG_NEWLIB_LIBC=y` + `CONFIG_NEWLIB_LIBC_NANO=y`
+for every target. The firmware's libc surface is narrow (`printk`,
+`memcpy`, `memset`, a handful of others) — `CONFIG_MINIMAL_LIBC=y`
+covers it and saves a few KB on the ~56 KB nrf52810 app partition.
+
+nrf54L15 has plenty of RRAM and the SMP-server / mcumgr config paths
+rely on Newlib `stdio` — do NOT touch that target. The symmetric move
+already exists for nrf54L15: `boards/nrf54l15dk_nrf54l15_cpuapp.conf:12`
+overrides `CONFIG_NEWLIB_LIBC_NANO=n`.
+
+Proposed shape:
+- Move `CONFIG_NEWLIB_LIBC*` out of `prj.conf` into per-board overlays.
+- Add `CONFIG_MINIMAL_LIBC=y` to the nrf52810 (and nrf52805) board
+  overlay.
+- Validate with `west build -t rom_report` before/after. If savings
+  aren't measurable, close as won't-fix.
+
+## Skip NVS time saves on boards without a 32.768 kHz crystal
+
+`kIntervalTimeSave = 3600` in `src/beacon_state.hpp:51` persists the
+RTC offset to flash every hour (call site: `src/beacon_state.cpp:528`).
+On boards using the internal RC oscillator for the LF clock (many
+cheap nrf52810 beacons), drift is large enough that a persisted time
+offset isn't useful across reboots — pure flash wear and power cost.
+
+Not applicable to nrf54L15 (has crystal; RRAM has ~1M endurance so
+wear isn't a concern anyway). Only relevant to nrf52xxx boards without
+a 32 kHz crystal.
+
+Gating strategy needs thought: `beacon_state.hpp` is pure portable C++
+(see the vendor-neutral portability section above) — can't `#ifdef` on
+`CONFIG_CLOCK_CONTROL_NRF_K32SRC_RC` there. Options:
+
+- Add `has_lf_crystal()` (or `should_persist_time()`) to `IHardware`;
+  Zephyr impl returns `IS_ENABLED(CONFIG_CLOCK_CONTROL_NRF_K32SRC_RC)
+  ? false : true`. `StateMachine::on_tick` checks before entering the
+  time-save branch. Keeps the library layer clean.
+- Or: wire it through `BeaconConfig` as a boolean, set at init time
+  from the hardware layer. Same contract, different shape.
+
+Note: `src/myboards.h:15` has a dead `INTERVAL_TIMESAVE 3600` macro
+left over from pre-C++-refactor that can be deleted in the same commit.
+
 ## Refactor `conn_beacon.py`
 
 Python 2-era style inherited from upstream vasimv fork: bare `except`,
