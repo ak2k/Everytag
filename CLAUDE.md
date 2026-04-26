@@ -57,6 +57,7 @@ nix build .#firmware-nrf54l15-dfu
 # Zephyr built-in boards (no BOARD_ROOT needed):
 #   nrf52dk/nrf52832, nrf52840dk/nrf52840, nrf52833dk/nrf52833, thingy52/nrf52832
 # nrf54l15dk/nrf54l15/cpuapp (build-verified, BabbleSim-tested)
+# nrf54l15dk/nrf54l05/cpuapp (build-verified: dev 163 KB / DFU 188 KB-of-206-slot — Holyiot 25055 v1.0; cost-reduced L15 SoC, 500 KB RRAM, 96 KB RAM; partition layout via Zephyr's nrf54l05_cpuapp_partition.dtsi)
 
 ## Architecture (C++ migration)
 # src/beacon_logic.hpp/cpp   — pure functions (MAC, adv template, status byte via StatusFlags)

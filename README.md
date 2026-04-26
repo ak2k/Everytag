@@ -42,6 +42,7 @@ Zephyr built-in boards (no `BOARD_ROOT` needed):
 
 nRF54 series:
 - nRF54L15DK (build-verified, BabbleSim-tested)
+- nRF54L05 — uses Zephyr's `nrf54l15dk/nrf54l05/cpuapp` variant (cost-reduced L15, 500 KB RRAM, 96 KB RAM). Build-target for Holyiot 25055 v1.0. Pin map inherits from the L15 DK overlay; a dedicated `boards/arm/holyiot_25055_nrf54l05/` BSP for the round PCB's button/buzzer/accel pinout is a follow-up.
 
 For NRF52DK, KKM C2, and KKM K4P you need to use the button to turn on after first flash. On other boards it starts right after flashing (1 short + 2 long LED blink).
 
@@ -86,8 +87,10 @@ Dev builds use `prj.conf` (logging, RTT console, GPIO enabled). Release builds u
 | nRF54L15 | dev | 177 KB | 1524 KB | 12% | |
 | nRF54L15 | release | 155 KB | 1524 KB | 10% | |
 | nRF54L15 | DFU app slot | 172 KB | 674 KB | 26% | +36 KB MCUboot |
+| nRF54L05 | dev | 163 KB | 500 KB | 33% | non-DFU build uses full RRAM |
+| nRF54L05 | DFU app slot | 188 KB | 206 KB | **89%** | +64 KB MCUboot, slot1 = 200 KB |
 
-Logging and RTT add ~21 KB. The nRF52810 is the tightest target — 69% in release, 80% in dev — with 38–59 KB of headroom. All other platforms have ample room.
+Logging and RTT add ~21 KB. The nRF52810 is the tightest target — 69% in release, 80% in dev — with 38–59 KB of headroom. The nRF54L05 DFU build has the tightest *slot* fit (89%, ~22 KB headroom) — adding crypto for FHN OpenHaystack will pull this above 90% and may require shrinking the storage partition.
 
 ### With west
 

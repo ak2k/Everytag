@@ -259,6 +259,15 @@
             boardRoot = false;
             dfu = true;
           }
+          {
+            # L05 = cost-reduced L15 (500 KB RRAM, 96 KB RAM, same Cortex-M33).
+            # No Nordic DK exists for L05; upstream Zephyr ships this variant
+            # of the L15 DK that enforces L05 limits. Tested on Holyiot 25055.
+            short = "nrf54l05";
+            board = "nrf54l15dk/nrf54l05/cpuapp";
+            boardRoot = false;
+            dfu = true;
+          }
         ];
 
         # Generate firmware-<short> (dev) and firmware-<short>-release for each board,
