@@ -1,5 +1,5 @@
 /*
- * BabbleSim BLE advertisement test for Everytag beacon
+ * BabbleSim BLE advertisement test for MockingBeacon beacon
  *
  * Two devices:
  * - Device 0 (advertiser): broadcasts AirTag and FMDN advertisements

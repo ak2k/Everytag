@@ -1,5 +1,5 @@
 {
-  description = "Everytag BLE beacon firmware";
+  description = "MockingBeacon BLE beacon firmware";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
@@ -94,9 +94,9 @@
         westConfigurePhase = ''
           runHook preConfigure
           cd ..
-          mv $sourceRoot everytag
+          mv $sourceRoot mockingbeacon
           mkdir -p $sourceRoot
-          mv everytag $sourceRoot/
+          mv mockingbeacon $sourceRoot/
           cd $sourceRoot
           runHook postConfigure
           # NCS 3.x imports python scripts via west2nix's fake-repo mechanism,
@@ -109,13 +109,13 @@
           # only fakes git repos for imported projects, not the manifest dir
           # itself. Without this, DFU builds fail at zephyr_module.py:589 with
           # `TypeError: unsupported operand type(s) for +=: 'NoneType' and 'str'`.
-          ${pkgs.gitMinimal}/bin/git -C everytag init -q
-          ${pkgs.gitMinimal}/bin/git -C everytag config user.email 'nix@build'
-          ${pkgs.gitMinimal}/bin/git -C everytag config user.name 'Nix Build'
-          ${pkgs.gitMinimal}/bin/git -C everytag add -A
-          ${pkgs.gitMinimal}/bin/git -C everytag commit -q -m 'Nix build snapshot'
-          west init -l everytag
-          cd everytag
+          ${pkgs.gitMinimal}/bin/git -C mockingbeacon init -q
+          ${pkgs.gitMinimal}/bin/git -C mockingbeacon config user.email 'nix@build'
+          ${pkgs.gitMinimal}/bin/git -C mockingbeacon config user.name 'Nix Build'
+          ${pkgs.gitMinimal}/bin/git -C mockingbeacon add -A
+          ${pkgs.gitMinimal}/bin/git -C mockingbeacon commit -q -m 'Nix build snapshot'
+          west init -l mockingbeacon
+          cd mockingbeacon
         '';
 
         # prj.conf is always the base. Release builds overlay prj-lowpower.conf
@@ -212,12 +212,12 @@
 
             installPhase = ''
               mkdir -p $out
-              cp build/everytag/zephyr/zephyr.elf $out/
-              cp build/everytag/zephyr/zephyr.signed.hex $out/ 2>/dev/null || true
+              cp build/mockingbeacon/zephyr/zephyr.elf $out/
+              cp build/mockingbeacon/zephyr/zephyr.signed.hex $out/ 2>/dev/null || true
               cp build/merged.hex $out/ 2>/dev/null || true
               cp build/dfu_application.zip $out/ 2>/dev/null || true
               cp "$ZEPHYR_BASE/VERSION" $out/zephyr-version.txt
-              ${pkgs.gcc-arm-embedded}/bin/arm-none-eabi-size build/everytag/zephyr/zephyr.elf | tee $out/size.txt
+              ${pkgs.gcc-arm-embedded}/bin/arm-none-eabi-size build/mockingbeacon/zephyr/zephyr.elf | tee $out/size.txt
             '';
           };
 
@@ -270,14 +270,14 @@
               {
                 name = "firmware-${b.short}";
                 value = mkFirmware {
-                  name = "everytag-firmware-${b.short}";
+                  name = "mockingbeacon-firmware-${b.short}";
                   inherit (b) board boardRoot;
                 };
               }
               {
                 name = "firmware-${b.short}-release";
                 value = mkFirmware {
-                  name = "everytag-firmware-${b.short}-release";
+                  name = "mockingbeacon-firmware-${b.short}-release";
                   inherit (b) board boardRoot;
                   release = true;
                 };
@@ -287,14 +287,14 @@
               {
                 name = "firmware-${b.short}-dfu";
                 value = mkFirmwareDfu {
-                  name = "everytag-firmware-${b.short}-dfu";
+                  name = "mockingbeacon-firmware-${b.short}-dfu";
                   inherit (b) board boardRoot;
                 };
               }
               {
                 name = "firmware-${b.short}-dfu-dev";
                 value = mkFirmwareDfu {
-                  name = "everytag-firmware-${b.short}-dfu-dev";
+                  name = "mockingbeacon-firmware-${b.short}-dfu-dev";
                   inherit (b) board boardRoot;
                   release = false;
                 };
@@ -310,7 +310,7 @@
 
           # nix build .#firmware — builds all dev board targets
           firmware = pkgs.symlinkJoin {
-            name = "everytag-firmware-all";
+            name = "mockingbeacon-firmware-all";
             paths = map (b: firmwarePackages."firmware-${b.short}") boards;
           };
 
@@ -376,7 +376,7 @@
           # BabbleSim BLE test derivation (Linux only)
           # gccMultiStdenv provides gcc with --enable-multilib (32-bit libgcc in 32/ subdir)
           bsim-test = pkgs.gccMultiStdenv.mkDerivation {
-            name = "everytag-bsim-test";
+            name = "mockingbeacon-bsim-test";
             src = ./.;
             nativeBuildInputs = commonBuildInputs;
             # glibc 2.42+ rejects _FORTIFY_SOURCE without optimization. Zephyr's
@@ -504,7 +504,7 @@
           let
             apps = self.apps.${system};
           in
-          pkgs.runCommand "everytag-checks" { src = ./.; } ''
+          pkgs.runCommand "mockingbeacon-checks" { src = ./.; } ''
             ${apps.test.program} $src
             ${apps.lint.program} $src
             ${apps.cppcheck.program} $src
@@ -531,7 +531,7 @@
           in
           {
             test = mkApp {
-              name = "everytag-test";
+              name = "mockingbeacon-test";
               runtimeInputs = [
                 pkgs.cmake
                 pkgs.clang
@@ -550,7 +550,7 @@
             };
 
             test-ble = mkApp {
-              name = "everytag-test-ble";
+              name = "mockingbeacon-test-ble";
               runtimeInputs = [ testPythonEnv ];
               text = ''
                 cd "''${1:-.}"
@@ -562,7 +562,7 @@
             };
 
             format = mkApp {
-              name = "everytag-format";
+              name = "mockingbeacon-format";
               runtimeInputs = [ pkgs.clang-tools ];
               text = ''
                 cd "''${1:-.}"
@@ -572,7 +572,7 @@
             };
 
             lint = mkApp {
-              name = "everytag-lint";
+              name = "mockingbeacon-lint";
               runtimeInputs = [ pkgs.clang-tools ];
               text = ''
                 cd "''${1:-.}"
@@ -582,7 +582,7 @@
             };
 
             fuzz = mkApp {
-              name = "everytag-fuzz";
+              name = "mockingbeacon-fuzz";
               runtimeInputs = [
                 pkgs.cmake
                 pkgs.clang
@@ -602,7 +602,7 @@
             };
 
             cppcheck = mkApp {
-              name = "everytag-cppcheck";
+              name = "mockingbeacon-cppcheck";
               runtimeInputs = [ pkgs.cppcheck ];
               text = ''
                 cd "''${1:-.}"
@@ -624,7 +624,7 @@
                 cd "''${1:-.}"
                 if [ ! -d ../nrf ] || [ ! -d ../zephyr ]; then
                   echo "Initializing west workspace..."
-                  (cd .. && west init -l Everytag)
+                  (cd .. && west init -l MockingBeacon)
                 fi
                 echo "Updating west projects (this may take a few minutes)..."
                 (cd .. && west update --narrow -o=--depth=1)

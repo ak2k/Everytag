@@ -117,7 +117,7 @@ The code is already architecturally split but not packaged:
   API needs docs. Without a module, docs rot.
 - **Independent versioning**: library can stabilize (v1.x) while the
   product iterates (v0.x).
-- **SBOM clarity downstream**: `everytag-beacon` appears as a distinct
+- **SBOM clarity downstream**: `mockingbeacon-beacon` appears as a distinct
   supply-chain dep in consumer projects' buildtime SBOMs.
 - **Portability surface**: IHardware already abstracts Zephyr; module
   packaging makes that contract explicit if ever porting to another
@@ -131,13 +131,13 @@ The code is already architecturally split but not packaged:
 
 ### Rough plan
 
-1. Create `modules/everytag-beacon/` (or separate repo).
+1. Create `modules/mockingbeacon-beacon/` (or separate repo).
 2. Move library sources: `beacon_logic`, `accel_data`, `beacon_config`,
    `beacon_state`, `ihardware.hpp`, `beacon_nvs_ids.hpp`.
-3. Define public API headers (in `include/everytag/beacon/`?) —
-   explicit `#include <everytag/beacon/state_machine.hpp>` etc.
+3. Define public API headers (in `include/mockingbeacon/beacon/`?) —
+   explicit `#include <mockingbeacon/beacon/state_machine.hpp>` etc.
 4. Add `zephyr/module.yml` at module root.
-5. Add module-level `Kconfig` with `CONFIG_EVERYTAG_BEACON=y`.
+5. Add module-level `Kconfig` with `CONFIG_MOCKINGBEACON_BEACON=y`.
 6. Module `CMakeLists.txt` compiles library sources, exposes include
    dir, hides internals.
 7. App `west.yml` imports the module.
@@ -258,7 +258,7 @@ Model ID registration).
   batch, no re-flash, tag is autonomous. Backend still uploads EID
   batches to Google (server-side resolution window requirement).
 - Decoupled rotation: AirTag keeps our existing cadence; FHN rotates
-  per spec (1024s + random 1–204s). `CONFIG_EVERYTAG_FHN_STATIC_MAC`
+  per spec (1024s + random 1–204s). `CONFIG_MOCKINGBEACON_FHN_STATIC_MAC`
   Kconfig as fallback if Android unwanted-tracker alerts prove
   problematic in field testing.
 - Companion app is a thin BLE relay; backend holds the EIK and

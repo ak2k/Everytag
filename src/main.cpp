@@ -1,4 +1,4 @@
-// main.cpp -- New entry point for Everytag firmware (C++ state machine)
+// main.cpp -- New entry point for MockingBeacon firmware (C++ state machine)
 
 #include "accel_data.hpp"
 #include "beacon_config.hpp"

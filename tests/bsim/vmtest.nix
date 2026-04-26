@@ -28,7 +28,7 @@ let
   # Copy repo source into the Nix store (sandbox-safe)
   repoSrc = builtins.path {
     path = ../..;
-    name = "everytag-src";
+    name = "mockingbeacon-src";
     filter =
       path: type:
       # Exclude build artifacts and .git
@@ -45,7 +45,7 @@ let
   };
 in
 pkgs.testers.nixosTest {
-  name = "everytag-bsim-ble-test";
+  name = "mockingbeacon-bsim-ble-test";
 
   nodes.machine =
     { pkgs, lib, ... }:
@@ -74,12 +74,12 @@ pkgs.testers.nixosTest {
     machine.wait_for_unit("multi-user.target")
 
     # Copy source from Nix store to writable location
-    machine.succeed("cp -r ${repoSrc} /root/Everytag && chmod -R u+w /root/Everytag")
-    machine.succeed("cd /root/Everytag && git init -q && git add -A")
+    machine.succeed("cp -r ${repoSrc} /root/MockingBeacon && chmod -R u+w /root/MockingBeacon")
+    machine.succeed("cd /root/MockingBeacon && git init -q && git add -A")
 
     # Initialize west workspace for Zephyr
     machine.succeed(
-      "cd /root && west init -l Everytag 2>&1 | tail -3"
+      "cd /root && west init -l MockingBeacon 2>&1 | tail -3"
     )
     machine.succeed(
       "cd /root && west update --narrow -o=--depth=1 2>&1 | tail -5"
@@ -109,7 +109,7 @@ pkgs.testers.nixosTest {
       "export BOARD=nrf52_bsim && "
       "export ZEPHYR_TOOLCHAIN_VARIANT=host && "
       "source $ZEPHYR_BASE/tests/bsim/compile.source && "
-      "app=tests/bsim app_root=/root/Everytag _compile"
+      "app=tests/bsim app_root=/root/MockingBeacon _compile"
     )
 
     # Verify test binary built
@@ -118,9 +118,9 @@ pkgs.testers.nixosTest {
     # Run the BLE advertisement + key rotation + MAC verification test (nrf52_bsim)
     machine.succeed(
       "cd /root/bsim_out/bin && "
-      "./bs_nrf52_bsim_tests_bsim_prj_conf -v=2 -s=everytag_test -d=0 -rs=420 -testid=advertiser & "
-      "./bs_nrf52_bsim_tests_bsim_prj_conf -v=2 -s=everytag_test -d=1 -rs=69  -testid=scanner & "
-      "./bs_2G4_phy_v1 -v=2 -s=everytag_test -D=2 -sim_length=5000000 && "
+      "./bs_nrf52_bsim_tests_bsim_prj_conf -v=2 -s=mockingbeacon_test -d=0 -rs=420 -testid=advertiser & "
+      "./bs_nrf52_bsim_tests_bsim_prj_conf -v=2 -s=mockingbeacon_test -d=1 -rs=69  -testid=scanner & "
+      "./bs_2G4_phy_v1 -v=2 -s=mockingbeacon_test -D=2 -sim_length=5000000 && "
       "wait"
     )
 
@@ -134,7 +134,7 @@ pkgs.testers.nixosTest {
       "export BOARD=nrf54l15bsim/nrf54l15/cpuapp && "
       "export ZEPHYR_TOOLCHAIN_VARIANT=host && "
       "source $ZEPHYR_BASE/tests/bsim/compile.source && "
-      "app=tests/bsim app_root=/root/Everytag _compile"
+      "app=tests/bsim app_root=/root/MockingBeacon _compile"
     )
 
     machine.succeed("test -f /root/bsim_out/bin/bs_nrf54l15bsim_nrf54l15_cpuapp_tests_bsim_prj_conf")
@@ -142,9 +142,9 @@ pkgs.testers.nixosTest {
     # Run the same test on nrf54l15bsim
     machine.succeed(
       "cd /root/bsim_out/bin && "
-      "./bs_nrf54l15bsim_nrf54l15_cpuapp_tests_bsim_prj_conf -v=2 -s=everytag_54l_test -d=0 -rs=420 -testid=advertiser & "
-      "./bs_nrf54l15bsim_nrf54l15_cpuapp_tests_bsim_prj_conf -v=2 -s=everytag_54l_test -d=1 -rs=69  -testid=scanner & "
-      "./bs_2G4_phy_v1 -v=2 -s=everytag_54l_test -D=2 -sim_length=5000000 && "
+      "./bs_nrf54l15bsim_nrf54l15_cpuapp_tests_bsim_prj_conf -v=2 -s=mockingbeacon_54l_test -d=0 -rs=420 -testid=advertiser & "
+      "./bs_nrf54l15bsim_nrf54l15_cpuapp_tests_bsim_prj_conf -v=2 -s=mockingbeacon_54l_test -d=1 -rs=69  -testid=scanner & "
+      "./bs_2G4_phy_v1 -v=2 -s=mockingbeacon_54l_test -D=2 -sim_length=5000000 && "
       "wait"
     )
 

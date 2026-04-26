@@ -28,7 +28,7 @@ from bumble.host import Host
 from bumble.link import LocalLink
 from bumble.hci import Address
 
-# ---- Everytag GATT UUIDs (from gatt_glue.c) ----
+# ---- MockingBeacon GATT UUIDs (from gatt_glue.c) ----
 
 SERVICE_UUID = "5cfce313-a7e3-45c3-933d-418b8100da7f"
 
@@ -70,7 +70,7 @@ ALL_SETTING_UUIDS = [
 
 
 class BeaconGattServer:
-    """Simulates the Everytag beacon's GATT service with auth enforcement.
+    """Simulates the MockingBeacon beacon's GATT service with auth enforcement.
 
     Mirrors gatt_glue.c behavior:
     - write_authorize() rejects all writes unless authorized or targeting auth char

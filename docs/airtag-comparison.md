@@ -1,6 +1,6 @@
-# Everytag vs Apple AirTag — Design Comparison
+# MockingBeacon vs Apple AirTag — Design Comparison
 
-This document compares the Everytag firmware's approach to that of a real Apple AirTag, based on publicly available reverse engineering research. Understanding these differences helps inform future optimization decisions.
+This document compares the MockingBeacon firmware's approach to that of a real Apple AirTag, based on publicly available reverse engineering research. Understanding these differences helps inform future optimization decisions.
 
 ## Sources
 
@@ -12,7 +12,7 @@ This document compares the Everytag firmware's approach to that of a real Apple 
 
 ## Hardware
 
-| | Apple AirTag | Everytag |
+| | Apple AirTag | MockingBeacon |
 |---|---|---|
 | SoC | nRF52832 (custom Apple firmware) | nRF52805/810/832/833, nRF54L15 |
 | Accelerometer | Bosch BMA280 | LIS2DW12 (on supported boards) |
@@ -22,36 +22,36 @@ This document compares the Everytag firmware's approach to that of a real Apple 
 
 ## BLE Advertising
 
-| | Apple AirTag | Everytag | Notes |
+| | Apple AirTag | MockingBeacon | Notes |
 |---|---|---|---|
 | Advertisement type | ADV_NONCONN_IND | Connectable (during settings window) | AirTag is non-connectable in normal operation; only becomes connectable on-demand from the owner's iPhone |
 | Advertisement interval | ~2 seconds | ~7 seconds (configurable: 1/2/4/8s) | AirTag's 2s provides better detection by passing phones |
 | TX power | Constant ~0 to +4 dBm | Configurable: -8/0/+4 dBm | No evidence AirTag varies TX power |
-| Periodic power burst | Not observed | Every 68 seconds, brief +4/+8 dBm burst | Everytag's own optimization; not based on AirTag behavior |
+| Periodic power burst | Not observed | Every 68 seconds, brief +4/+8 dBm burst | MockingBeacon's own optimization; not based on AirTag behavior |
 | Payload | 28-byte public key + status byte + hint byte | Same format (Apple Offline Finding compatible) | Byte-identical advertisement structure |
 
 ## Key Rotation
 
-| | Apple AirTag | Everytag | Notes |
+| | Apple AirTag | MockingBeacon | Notes |
 |---|---|---|---|
 | Near owner | ~15 minutes | N/A (no owner proximity detection) | AirTag syncs key schedule with paired iPhone |
 | Separated from owner | ~24 hours | Configurable (default 10 minutes) | AirTag slows rotation to enable anti-stalking detection |
-| Key derivation | Deterministic KDF from shared secret + time counter | Pre-generated key ring loaded via BLE | AirTag derives keys on-device; Everytag loads them externally |
-| Max keys | Unlimited (derived on-the-fly) | 40 (stored in flash) | Everytag's 40-key ring wraps around |
+| Key derivation | Deterministic KDF from shared secret + time counter | Pre-generated key ring loaded via BLE | AirTag derives keys on-device; MockingBeacon loads them externally |
+| Max keys | Unlimited (derived on-the-fly) | 40 (stored in flash) | MockingBeacon's 40-key ring wraps around |
 
 ## Power Management
 
-| | Apple AirTag | Everytag | Notes |
+| | Apple AirTag | MockingBeacon | Notes |
 |---|---|---|---|
 | Sleep strategy | Deep sleep with accelerometer interrupt wake | Continuous advertising with periodic settings window | AirTag is more aggressive about sleeping |
-| Connectable mode | On-demand only (owner initiates) | 2 seconds every minute | Everytag trades power for field configurability |
+| Connectable mode | On-demand only (owner initiates) | 2 seconds every minute | MockingBeacon trades power for field configurability |
 | Scanning (RX) | Never | Never | Both are pure broadcasters in normal operation |
-| Motion detection | Accelerometer interrupt gates advertising | Accelerometer samples movement for status byte | AirTag uses motion to wake; Everytag uses it for telemetry |
+| Motion detection | Accelerometer interrupt gates advertising | Accelerometer samples movement for status byte | AirTag uses motion to wake; MockingBeacon uses it for telemetry |
 | Estimated battery life | ~1 year (CR2032) | Depends on configuration and board | Lower TX power + longer interval = longer life |
 
 ## Status Byte
 
-| | Apple AirTag | Everytag |
+| | Apple AirTag | MockingBeacon |
 |---|---|---|
 | Battery level | 2-bit field (full/medium/low/critical) | Configurable: voltage, level, or telemetry cycle |
 | Movement flag | Single bit indicating current motion | 7-bit movement summary (time-bucketed history) |
@@ -60,7 +60,7 @@ This document compares the Everytag firmware's approach to that of a real Apple 
 
 ## Anti-Stalking
 
-| | Apple AirTag | Everytag |
+| | Apple AirTag | MockingBeacon |
 |---|---|---|
 | Sound alert | After 8-24h separated from owner | None (no speaker) |
 | iOS detection | 24h key rotation enables tracking detection | Fast rotation may evade detection |
@@ -68,10 +68,10 @@ This document compares the Everytag firmware's approach to that of a real Apple 
 
 ## Key Differences Summary
 
-1. **Connectivity model**: AirTag is non-connectable almost always; Everytag opens a connectable window every minute for settings. This is the biggest power consumption difference.
+1. **Connectivity model**: AirTag is non-connectable almost always; MockingBeacon opens a connectable window every minute for settings. This is the biggest power consumption difference.
 
-2. **Key management**: AirTag derives keys deterministically from a shared secret, enabling unlimited key rotation. Everytag uses a pre-loaded key ring (max 40 keys) that wraps around.
+2. **Key management**: AirTag derives keys deterministically from a shared secret, enabling unlimited key rotation. MockingBeacon uses a pre-loaded key ring (max 40 keys) that wraps around.
 
-3. **Power bursts**: Everytag's 68-second high-power burst is a unique feature not observed in real AirTags. Its effectiveness is unverified.
+3. **Power bursts**: MockingBeacon's 68-second high-power burst is a unique feature not observed in real AirTags. Its effectiveness is unverified.
 
-4. **Anti-stalking**: AirTag has multiple anti-stalking mechanisms (slow key rotation when separated, sound alerts, iOS/Android detection). Everytag does not implement these.
+4. **Anti-stalking**: AirTag has multiple anti-stalking mechanisms (slow key rotation when separated, sound alerts, iOS/Android detection). MockingBeacon does not implement these.

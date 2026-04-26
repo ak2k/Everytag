@@ -93,7 +93,7 @@ partition.
   rotation edge. Not derived from EID — Google doesn't check the
   correlation, and `bt_addr_le_create_nrpa()` is the idiomatic call.
 - **Decoupled**: AirTag and FHN run on independent timers.
-- **Static-MAC escape hatch**: `CONFIG_EVERYTAG_FHN_STATIC_MAC=y` if
+- **Static-MAC escape hatch**: `CONFIG_MOCKINGBEACON_FHN_STATIC_MAC=y` if
   Android "Unknown Tracker Alert" fires on nearby users. Trades owner
   privacy for detection avoidance.
 
@@ -181,10 +181,10 @@ reset" as the v1 migration. Add a `static_assert(sizeof(EidBatch)
 ### Minimal Kconfig (Design C on nRF54L15)
 
 ```kconfig
-CONFIG_EVERYTAG_FHN=y
-CONFIG_EVERYTAG_FHN_DERIVE=y        # 54L15 only
-# CONFIG_EVERYTAG_FHN_PREGEN=y      # universal default
-# CONFIG_EVERYTAG_FHN_STATIC_MAC=y  # escape hatch
+CONFIG_MOCKINGBEACON_FHN=y
+CONFIG_MOCKINGBEACON_FHN_DERIVE=y        # 54L15 only
+# CONFIG_MOCKINGBEACON_FHN_PREGEN=y      # universal default
+# CONFIG_MOCKINGBEACON_FHN_STATIC_MAC=y  # escape hatch
 
 CONFIG_NRF_SECURITY=y
 CONFIG_MBEDTLS_PSA_CRYPTO_C=y
@@ -206,11 +206,11 @@ model demands.
 
 ### Two systemd units sharing one SQLite file
 
-- **`everytag-api.service`** — FastAPI, Uvicorn. REST endpoints for
+- **`mockingbeacon-api.service`** — FastAPI, Uvicorn. REST endpoints for
   companion app (pair, list-tags, list-locations, unprovision). Also
   runs the per-tag EID-upload cron via `apscheduler` (or a systemd
-  timer calling `uv run -m everytag.refresh --all`; pick one).
-- **`everytag-mcs.service`** — dedicated FCM/MCS listener persistently
+  timer calling `uv run -m mockingbeacon.refresh --all`; pick one).
+- **`mockingbeacon-mcs.service`** — dedicated FCM/MCS listener persistently
   connected to `mtalk.google.com:5228`. Receives encrypted location
   reports, decrypts with per-tag EIK, inserts into `locations` table.
   Separate process so API deploys don't drop report delivery.
@@ -220,8 +220,8 @@ WAL mode with `busy_timeout=5000`. Graduate to Postgres at ~5k tags.
 
 ### Config
 
-**SOPS-encrypted YAML** (`/etc/everytag/config.yaml.sops`) decrypted
-at boot with an age key at `/etc/everytag/age.key` (mode 400). Holds:
+**SOPS-encrypted YAML** (`/etc/mockingbeacon/config.yaml.sops`) decrypted
+at boot with an age key at `/etc/mockingbeacon/age.key` (mode 400). Holds:
 
 - Google OAuth refresh tokens (single-tenant: one per user, in a map)
 - Per-tag EIKs (single source of truth)
@@ -437,8 +437,8 @@ Firmware ↔ backend ↔ Google ↔ Android app all connected.
 
 Backend:
 - [ ] Nova + Spot clients (gpsoauth chain)
-- [ ] `everytag-mcs` systemd unit + MCS listener + report decrypt
-- [ ] `everytag-api` systemd unit + REST endpoints
+- [ ] `mockingbeacon-mcs` systemd unit + MCS listener + report decrypt
+- [ ] `mockingbeacon-api` systemd unit + REST endpoints
 - [ ] Mock-server test fixtures for the Google client paths
 - [ ] `.github/workflows/fhn-canary.yml` + `schema-snapshot.json`
 

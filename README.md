@@ -1,7 +1,7 @@
-# Everytag
+# MockingBeacon
 
-> **Fork note:** This fork restructures the firmware as C++ with comprehensive testing.
-> Original upstream: [vasimv/Everytag](https://github.com/vasimv/Everytag)
+> **Lineage:** MockingBeacon (formerly Everytag) is a C++ restructuring of the firmware with comprehensive testing.
+> Upstream: [OpenHaystack](https://github.com/seemoo-lab/openhaystack) → [macless-haystack](https://github.com/dchristl/macless-haystack) → [vasimv/Everytag](https://github.com/vasimv/Everytag) → MockingBeacon.
 >
 > **What changed:**
 > - NCS 3.2.4 / Zephyr 4.2 (staged migration from 2.9.2 preserved `.recycled` advertising lifecycle and RAM budgets on nRF52810)
@@ -217,11 +217,11 @@ See `tagcheck/` for an Android app that can scan for beacons, change settings, a
 
 ## Credits and project history
 
-This firmware originated as a fork of the [macless-haystack](https://github.com/dchristl/macless-haystack) project, which itself builds on the [OpenHaystack](https://github.com/seemoo-lab/openhaystack) research project by the Secure Mobile Networking Lab at TU Darmstadt.
+This project (formerly **Everytag**, renamed to **MockingBeacon** in 2026-04) restructures the firmware as C++ with an `IHardware` abstraction and comprehensive off-target testing.
 
-The original C firmware and Android app were written by [vasimv](https://github.com/vasimv/Everytag), adding multi-key rotation, Google FMDN support, BLE settings reconfiguration, accelerometer tracking, OTA updates, and power optimization for nRF52 chips.
+It originated as a fork of the [macless-haystack](https://github.com/dchristl/macless-haystack) project, which itself builds on the [OpenHaystack](https://github.com/seemoo-lab/openhaystack) research project by the Secure Mobile Networking Lab at TU Darmstadt.
 
-This fork restructures the firmware as C++ with an `IHardware` abstraction and comprehensive off-target testing, while preserving byte-identical output.
+The original C firmware **and Android app** were written by [vasimv](https://github.com/vasimv/Everytag), adding multi-key rotation, Google FMDN support, BLE settings reconfiguration, accelerometer tracking, OTA updates, and power optimization for nRF52 chips.
 
 ### Useful tools
 
