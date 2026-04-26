@@ -506,7 +506,7 @@ git revert -m 1 <merge-sha>
 git push origin main
 # Developers:
 cd .. && rm -rf .west nrf zephyr modules bootloader tools
-west init -l Everytag && west update --narrow -o=--depth=1
+west init -l MockingBeacon && west update --narrow -o=--depth=1
 ```
 Nix cache is content-addressed; revert is safe, 3.2.4 entries remain valid but unreferenced.
 
@@ -522,7 +522,7 @@ Nix cache is content-addressed; revert is safe, 3.2.4 entries remain valid but u
 ### Communication (post final merge)
 > NCS 3.2.4 migration complete — final PR merged. (Sequence was 6 sequential PRs, one per phase, landed over ~1 week.) Action required:
 > 1. `git pull origin main`
-> 2. `cd .. && rm -rf .west && west init -l Everytag && west update --narrow -o=--depth=1` (lockfile changed)
+> 2. `cd .. && rm -rf .west && west init -l MockingBeacon && west update --narrow -o=--depth=1` (lockfile changed)
 > 3. Next `nix build .#firmware` slow (~Xm, full rebuild); subsequent cached
 > 4. In-flight branches based on `main`: rebase; take `main`'s `west.yml`/`west2nix.toml`; re-run `west update`
 > 5. Report advertising or DFU issues in-thread. Rollback SOP in `docs/plans/2026-04-16-refactor-ncs-3.2.4-upgrade-plan.md`.

@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""Connect to an Everytag beacon and configure settings via BLE GATT."""
+"""Connect to an MockingBeacon beacon and configure settings via BLE GATT."""
 
 import argparse
 import binascii

@@ -2,7 +2,7 @@
 
 Captures pre-migration state of the firmware on `main` so post-migration
 diffs can be verified per-phase. See
-`/Users/akirby/Downloads/Everytag/docs/plans/2026-04-16-refactor-ncs-3.2.4-upgrade-plan.md`.
+`../plans/docs/plans/2026-04-16-refactor-ncs-3.2.4-upgrade-plan.md`.
 
 ## NCS 2.9.2 baseline (`main` @ bcfddc9, captured 2026-04-16)
 

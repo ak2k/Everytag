@@ -9,4 +9,4 @@ manifest:
       revision: v3.2.4
       import: true
   self:
-    path: everytag
+    path: mockingbeacon

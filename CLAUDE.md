@@ -2,7 +2,7 @@
 
 ## Prerequisites
 Run `nix develop` to enter the dev shell with all dependencies.
-Run `cd .. && west init -l Everytag && west update --narrow -o=--depth=1` to fetch Zephyr + NCS modules.
+Run `cd .. && west init -l MockingBeacon && west update --narrow -o=--depth=1` to fetch Zephyr + NCS modules.
 # Migrating from a 2.9.2 workspace: rm -rf ../zephyr ../nrf ../modules ../bootloader ../tools && west update
 
 ## Flake apps (no nix develop needed)
@@ -73,5 +73,5 @@ nix build .#firmware-nrf54l15-dfu
 ## west2nix lockfile
 # west2nix.toml pins 51 NCS/Zephyr projects with Nix hashes.
 # To regenerate after changing west.yml:
-#   cd .. && west update && cd Everytag
+#   cd .. && west update && cd MockingBeacon
 #   uv run scripts/west2nix.py -o west2nix.toml

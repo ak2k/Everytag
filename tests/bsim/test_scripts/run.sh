@@ -9,7 +9,7 @@ set -eu
 source ${ZEPHYR_BASE}/tests/bsim/sh_common.source
 
 BOARD="${BOARD:-nrf52_bsim}"
-simulation_id="everytag_adv_test_${BOARD}"
+simulation_id="mockingbeacon_adv_test_${BOARD}"
 verbosity_level=2
 
 # 5 seconds should be enough for 3 key rotations at 500ms each

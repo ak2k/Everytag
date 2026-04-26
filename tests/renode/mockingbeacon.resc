@@ -1,5 +1,5 @@
-:name: Everytag
-:description: Everytag BLE beacon on nRF52832
+:name: MockingBeacon
+:description: MockingBeacon BLE beacon on nRF52832
 
 using sysbus
 mach create
