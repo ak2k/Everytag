@@ -24,12 +24,12 @@ bool is_key_empty(const uint8_t* key, size_t len);
 
 /// Input to the status computation (replaces all globals).
 struct StatusInput {
-    StatusFlags status;       // Decoded status configuration
-    uint16_t battery_voltage; // Battery voltage in millivolts (e.g. 3800 = 3.8V)
-    uint16_t keys_changes;    // Rolling counter of AirTag key rotations (used by mode 2)
-    uint8_t what_in_status;   // Telemetry cycle selector: 0=voltage, 1=accel, 2=temperature
-    uint8_t accel_byte;       // 7-bit movement summary from MovementTracker::compute_accel_byte()
-    int16_t temperature;      // Accelerometer die temperature in 0.1C units (e.g. 235 = 23.5C)
+    StatusFlags status;           // Decoded status configuration
+    uint16_t battery_voltage = 0; // Battery voltage in millivolts (e.g. 3800 = 3.8V)
+    uint16_t keys_changes = 0;    // Rolling counter of AirTag key rotations (used by mode 2)
+    uint8_t what_in_status = 0;   // Telemetry cycle selector: 0=voltage, 1=accel, 2=temperature
+    uint8_t accel_byte = 0;  // 7-bit movement summary from MovementTracker::compute_accel_byte()
+    int16_t temperature = 0; // Accelerometer die temperature in 0.1C units (e.g. 235 = 23.5C)
 };
 
 /// Output of the status computation.

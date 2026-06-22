@@ -606,10 +606,17 @@
               runtimeInputs = [ pkgs.cppcheck ];
               text = ''
                 cd "''${1:-.}"
+                # zephyr_hardware.cpp gates the battery-check ADC code on Zephyr
+                # devicetree macros (DT_NODE_EXISTS/DT_PATH/DT_NODE_HAS_PROP) in a
+                # #if. Standalone cppcheck has no DT headers to expand them;
+                # cppcheck >= 2.21 hard-errors (syntaxError) on the unevaluatable
+                # condition where older versions assumed 0. Real syntax is checked
+                # by the Zephyr compiler in the smoke-build gate.
                 cppcheck --enable=warning,performance,portability \
                   --std=c++20 --error-exitcode=1 --force \
                   --suppress=missingIncludeSystem \
                   --suppress=normalCheckLevelMaxBranches \
+                  --suppress=syntaxError:src/zephyr_hardware.cpp \
                   src/*.cpp src/*.hpp
               '';
             };
